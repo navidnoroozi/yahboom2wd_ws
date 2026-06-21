@@ -1,0 +1,40 @@
+/**:
+  ros__parameters:
+    # Serial link. /dev/myserial is created by Yahboom's udev binding tutorial.
+    serial_port: /dev/myserial
+    car_type: 4
+    debug_serial: false
+    enable_auto_report: true
+    write_car_type_on_startup: false
+
+    # Recommended first mode: use Yahboom firmware motion PID path.
+    # Alternative commissioning mode: pwm_diff.
+    command_mode: motion
+
+    # Your custom 2WD chassis geometry.
+    wheel_radius: 0.035
+    wheel_separation: 0.148
+
+    # Conservative limits for first floor tests.
+    max_linear_speed: 0.30
+    max_angular_speed: 1.50
+    max_wheel_linear_speed: 0.45
+
+    # Physical wiring recommended by Yahboom support.
+    left_motor_port: 2
+    right_motor_port: 4
+    left_motor_sign: 1
+    right_motor_sign: 1
+
+    linear_cmd_scale: 1.0
+    angular_cmd_scale: 1.0
+    cmd_timeout_s: 0.50
+    update_rate_hz: 30.0
+
+    publish_tf: true
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+    imu_frame_id: imu_link
+    use_imu_yaw_for_odom: true
+    invert_yaw: false
+    reset_odom_on_start: true

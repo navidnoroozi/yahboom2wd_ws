@@ -1,0 +1,19 @@
+# Example network-level convention for the distributed MPC prototype.
+# Copy this convention to each RPi4 and use only that robot's namespace locally.
+robots:
+  - namespace: robot1
+    hostname: yahboom1
+    cmd_vel: /robot1/cmd_vel
+    odom: /robot1/odom
+  - namespace: robot2
+    hostname: yahboom2
+    cmd_vel: /robot2/cmd_vel
+    odom: /robot2/odom
+  - namespace: robot3
+    hostname: yahboom3
+    cmd_vel: /robot3/cmd_vel
+    odom: /robot3/odom
+  - namespace: robot4
+    hostname: yahboom4
+    cmd_vel: /robot4/cmd_vel
+    odom: /robot4/odom
