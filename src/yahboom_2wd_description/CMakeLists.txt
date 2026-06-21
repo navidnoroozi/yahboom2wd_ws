@@ -3,8 +3,12 @@ project(yahboom_2wd_description)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf rviz
-  DESTINATION share/${PROJECT_NAME}
-)
+foreach(dir urdf rviz)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${dir}")
+    install(DIRECTORY ${dir}
+      DESTINATION share/${PROJECT_NAME}
+    )
+  endif()
+endforeach()
 
 ament_package()
