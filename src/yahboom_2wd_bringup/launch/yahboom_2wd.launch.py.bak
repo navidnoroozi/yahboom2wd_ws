@@ -14,8 +14,6 @@ def generate_launch_description():
     publish_tf = LaunchConfiguration('publish_tf')
     wheel_radius = LaunchConfiguration('wheel_radius')
     wheel_separation = LaunchConfiguration('wheel_separation')
-    linear_cmd_scale = LaunchConfiguration('linear_cmd_scale')
-    angular_cmd_scale = LaunchConfiguration('angular_cmd_scale')
 
     robot_xacro = PathJoinSubstitution([
         FindPackageShare('yahboom_2wd_description'),
@@ -35,10 +33,8 @@ def generate_launch_description():
         DeclareLaunchArgument('serial_port', default_value='/dev/myserial'),
         DeclareLaunchArgument('command_mode', default_value='motion'),
         DeclareLaunchArgument('publish_tf', default_value='true'),
-        DeclareLaunchArgument('wheel_radius', default_value='0.0325'),
-        DeclareLaunchArgument('wheel_separation', default_value='0.120'),
-        DeclareLaunchArgument('linear_cmd_scale', default_value='1.0'),
-        DeclareLaunchArgument('angular_cmd_scale', default_value='1.0'),
+        DeclareLaunchArgument('wheel_radius', default_value='0.035'),
+        DeclareLaunchArgument('wheel_separation', default_value='0.148'),
         DeclareLaunchArgument(
             'config_file',
             default_value=PathJoinSubstitution([
@@ -72,8 +68,6 @@ def generate_launch_description():
                         'publish_tf': publish_tf,
                         'wheel_radius': wheel_radius,
                         'wheel_separation': wheel_separation,
-                        'linear_cmd_scale': linear_cmd_scale,
-                        'angular_cmd_scale': angular_cmd_scale,
                         'odom_frame_id': PythonExpression(["'", namespace, "/odom'"]),
                         'base_frame_id': PythonExpression(["'", namespace, "/base_footprint'"]),
                         'imu_frame_id': PythonExpression(["'", namespace, "/imu_link'"]),

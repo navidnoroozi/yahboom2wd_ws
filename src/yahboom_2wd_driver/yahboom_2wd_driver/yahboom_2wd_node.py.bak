@@ -54,10 +54,6 @@ def yaw_to_quaternion(yaw: float) -> Tuple[float, float, float, float]:
     return 0.0, 0.0, math.sin(half), math.cos(half)
 
 
-def normalize_angle(angle: float) -> float:
-    return math.atan2(math.sin(angle), math.cos(angle))
-
-
 def rpy_to_quaternion(roll: float, pitch: float, yaw: float) -> Tuple[float, float, float, float]:
     cr = math.cos(roll * 0.5)
     sr = math.sin(roll * 0.5)
@@ -107,7 +103,6 @@ class Yahboom2WDNode(Node):
         self.declare_parameter('use_imu_yaw_for_odom', True)
         self.declare_parameter('invert_yaw', False)
         self.declare_parameter('reset_odom_on_start', True)
-        self.declare_parameter('reset_odom_on_start', True)
 
         self.serial_port = str(self.get_parameter('serial_port').value)
         self.car_type = int(self.get_parameter('car_type').value)
@@ -130,8 +125,6 @@ class Yahboom2WDNode(Node):
         self.imu_frame_id = str(self.get_parameter('imu_frame_id').value)
         self.use_imu_yaw_for_odom = bool(self.get_parameter('use_imu_yaw_for_odom').value)
         self.invert_yaw = bool(self.get_parameter('invert_yaw').value)
-        self.reset_odom_on_start = bool(self.get_parameter('reset_odom_on_start').value)
-        self.yaw_offset: Optional[float] = None
 
         if self.command_mode not in ('motion', 'pwm_diff'):
             raise ValueError("command_mode must be 'motion' or 'pwm_diff'")
@@ -209,18 +202,6 @@ class Yahboom2WDNode(Node):
             yaw = -yaw
             wz = -wz
             gz = -gz
-        
-        # The board IMU yaw is an absolute heading at node startup. For odometry,
-        # the odom frame should normally start at x=0, y=0, theta=0 when this
-        # node starts. reset_odom_on_start therefore subtracts the initial yaw
-        # before using the IMU heading for odom integration. The IMU message still
-        # publishes the raw board orientation.
-        odom_yaw = yaw
-        if self.use_imu_yaw_for_odom and self.reset_odom_on_start:
-            if self.yaw_offset is None:
-                self.yaw_offset = yaw
-                self.get_logger().info(f'Using initial IMU yaw offset for odom: {self.yaw_offset:.4f} rad')
-            odom_yaw = normalize_angle(yaw - self.yaw_offset)
 
         if self.last_update_time is None:
             dt = 0.0
@@ -230,9 +211,9 @@ class Yahboom2WDNode(Node):
 
         if dt > 0.0:
             if self.use_imu_yaw_for_odom:
-                self.theta = odom_yaw
+                self.theta = yaw
             else:
-                self.theta = normalize_angle(self.theta + wz * dt)
+                self.theta += wz * dt
             c = math.cos(self.theta)
             s = math.sin(self.theta)
             self.x += (vx * c - vy * s) * dt
