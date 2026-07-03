@@ -37,7 +37,7 @@ def generate_launch_description():
         DeclareLaunchArgument('publish_tf', default_value='true'),
         DeclareLaunchArgument('wheel_radius', default_value='0.0325'),
         DeclareLaunchArgument('wheel_separation', default_value='0.120'),
-        DeclareLaunchArgument('linear_cmd_scale', default_value='2.0'),
+        DeclareLaunchArgument('linear_cmd_scale', default_value='1.7'),
         DeclareLaunchArgument('angular_cmd_scale', default_value='1.0'),
         DeclareLaunchArgument(
             'config_file',
