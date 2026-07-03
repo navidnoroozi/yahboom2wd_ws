@@ -85,8 +85,8 @@ class Yahboom2WDNode(Node):
 
         # Commanding / robot geometry.
         self.declare_parameter('command_mode', 'motion')  # motion | pwm_diff
-        self.declare_parameter('wheel_radius', 0.035)
-        self.declare_parameter('wheel_separation', 0.148)
+        self.declare_parameter('wheel_radius', 0.0325)
+        self.declare_parameter('wheel_separation', 0.120)
         self.declare_parameter('max_linear_speed', 0.5)
         self.declare_parameter('max_angular_speed', 2.5)
         self.declare_parameter('max_wheel_linear_speed', 0.5)
@@ -106,7 +106,6 @@ class Yahboom2WDNode(Node):
         self.declare_parameter('imu_frame_id', 'imu_link')
         self.declare_parameter('use_imu_yaw_for_odom', True)
         self.declare_parameter('invert_yaw', False)
-        self.declare_parameter('reset_odom_on_start', True)
         self.declare_parameter('reset_odom_on_start', True)
 
         self.serial_port = str(self.get_parameter('serial_port').value)
