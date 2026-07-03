@@ -1,0 +1,37 @@
+path_follower_node:
+  ros__parameters:
+    robot_namespace: robot1
+    control_rate_hz: 20.0
+
+    # Start safely. Override scenario from launch when needed.
+    scenario: straight
+    linear_speed: 0.08
+    angular_speed: 0.20
+    distance: 1.0
+    radius: 1.0
+    arc_angle: 1.57079632679
+    rotation_angle: 1.57079632679
+    turn_direction: left
+
+    # Sinusoidal path y=A sin(2*pi*x/wavelength)
+    amplitude: 0.20
+    wavelength: 2.0
+    path_length: 2.0
+
+    # Stop-and-go
+    move_time: 3.0
+    stop_time: 2.0
+    cycles: 3
+
+    # Feedback gains
+    kx: 0.8
+    ky: 1.5
+    ktheta: 1.8
+
+    # Safety limits
+    max_linear_speed: 0.12
+    max_angular_speed: 0.60
+    allow_reverse: false
+    stop_at_end: true
+    goal_tolerance_xy: 0.03
+    goal_tolerance_yaw: 0.05

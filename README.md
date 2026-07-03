@@ -49,10 +49,20 @@ yahboom2wd_ws/src/
 │   └── vendor/Rosmaster_Lib.py    # fallback copy of Yahboom driver library V3.3.9
 ├── yahboom_2wd_description/
 │   └── urdf/yahboom_2wd.urdf.xacro
-└── yahboom_2wd_bringup/
-    ├── launch/yahboom_2wd.launch.py
-    ├── config/yahboom_2wd.yaml
-    └── scripts/install_udev_yahboom.sh
+├── yahboom_2wd_bringup/
+│   ├── launch/yahboom_2wd.launch.py
+│   ├── config/yahboom_2wd.yaml
+│   └── scripts/install_udev_yahboom.sh
+└── yahboom_2wd_tests/
+    ├── yahboom_2wd_tests/
+    │   └── path_follower_node.py  # odometry-feedback path-following tests
+    ├── launch/
+    │   └── path_follower.launch.py
+    ├── config/
+    │   └── path_tests.yaml
+    ├── package.xml
+    ├── setup.py
+    └── setup.cfg
 ```
 
 ## ROS API per robot namespace
@@ -86,6 +96,73 @@ robot1/base_footprint -> robot1/base_link
 robot1/base_link      -> robot1/imu_link
 robot1/base_link      -> robot1/left_wheel_link
 robot1/base_link      -> robot1/right_wheel_link
+```
+
+
+## Odometry-feedback path-following test package
+
+The package `yahboom_2wd_tests` is intended for single-robot validation before moving to the distributed MPC planner. It plays the role of a simple high-level controller: it reads the measured robot pose from odometry, compares it with a reference path, and publishes corrected `Twist` commands to the same `/robot1/cmd_vel` interface that the future MPC planner will use.
+
+This package does not replace the Yahboom STM32 firmware and does not change the low-level motor-control interface. It sits above the existing `yahboom_2wd_driver` bridge.
+
+For namespace `robot1`, the path follower uses:
+
+Subscribed:
+
+- `/robot1/odom` (`nav_msgs/msg/Odometry`)
+
+Published:
+
+- `/robot1/cmd_vel` (`geometry_msgs/msg/Twist`)
+- `/robot1/path_test/reference_pose` (`geometry_msgs/msg/PoseStamped`)
+- `/robot1/path_test/tracking_error` (`geometry_msgs/msg/Vector3`)
+
+The `tracking_error` topic is intended for quick plotting and bag inspection:
+
+```text
+tracking_error.x = longitudinal or path-progress error [m]
+tracking_error.y = lateral/cross-track error [m]
+tracking_error.z = heading error [rad]
+```
+
+## Path-following test objectives
+
+The standard tests should answer these questions before the distributed MPC planner is connected:
+
+1. Can the robot receive high-level `Twist` commands reliably through `/robot1/cmd_vel`?
+2. Does the calibrated Yahboom bridge convert the commanded velocity into approximately correct physical motion?
+3. Does `/robot1/odom` provide a useful feedback signal for correcting path deviations?
+4. Are the signs of forward velocity, yaw rate, and odometry yaw consistent?
+5. Does the robot behave safely during start, stop, and changing-curvature commands?
+6. Are the left and right turns reasonably symmetric?
+7. Are the recorded bags sufficient to compare commanded trajectory, measured odometry, encoder ticks, and IMU yaw rate?
+
+The path-following tests are a bridge between simple open-loop `cmd_vel` checks and the future distributed MPC planning algorithm.
+
+## Path-following test strategy
+
+Use the following development order:
+
+1. **Open-loop bridge verification**: run the calibrated straight-line `cmd_vel` test and confirm approximately 1 m travel for the 10 s command.
+2. **Feedback straight-line tracking**: run the `straight` scenario with odometry feedback and check that lateral and heading errors remain small.
+3. **Yaw and angular-command validation**: run `pure_rotation` and verify yaw direction and approximate rotation angle.
+4. **Constant-curvature validation**: run `arc` and `circle` to validate simultaneous `linear.x` and `angular.z` commands.
+5. **Command-transient validation**: run `stop_and_go` to check stopping, watchdog behavior, and repeated starts.
+6. **Changing-curvature validation**: run `sinusoidal` to test smooth left-right curvature transitions.
+7. **Bag-based analysis**: record every important test and inspect `/robot1/cmd_vel`, `/robot1/odom`, `/robot1/path_test/reference_pose`, `/robot1/path_test/tracking_error`, encoders, IMU, and diagnostics.
+8. **MPC readiness decision**: only move to distributed MPC after the single robot can follow the standard references with predictable errors.
+
+The first recommended feedback test is the **straight** scenario. It is the simplest way to separate three issues: command delivery, linear velocity calibration, and odometry-feedback correction.
+
+Supported scenarios in `yahboom_2wd_tests`:
+
+```text
+straight
+pure_rotation
+arc
+circle
+stop_and_go
+sinusoidal
 ```
 
 ## Role of `ROS_DOMAIN_ID`
@@ -185,7 +262,11 @@ sudo rosdep init 2>/dev/null || true
 rosdep update
 
 mkdir -p ~/yahboom2wd_ws/src
-# Copy or clone these packages into ~/yahboom2wd_ws/src
+# Copy or clone these packages into ~/yahboom2wd_ws/src, including:
+#   yahboom_2wd_driver
+#   yahboom_2wd_description
+#   yahboom_2wd_bringup
+#   yahboom_2wd_tests
 
 cd ~/yahboom2wd_ws
 rosdep install --from-paths src -y --ignore-src --rosdistro humble
@@ -361,6 +442,147 @@ Calibrated scale:        linear_cmd_scale = 1.7
 
 The physical measurement should be made using a fixed point on the robot body before and after the test. For a straight-line test with little yaw drift, the exact point is less important than using the same point consistently.
 
+
+## Odometry-feedback path-following tests
+
+The path-following package should be added under:
+
+```text
+~/yahboom2wd_ws/src/yahboom_2wd_tests
+```
+
+After adding the package, rebuild the workspace:
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+rosdep install --from-paths src -y --ignore-src --rosdistro humble
+colcon build --symlink-install
+source install/setup.bash
+```
+
+The Yahboom bridge must already be running in Terminal 1 before starting a feedback path-following test.
+
+### Terminal 1: launch the Yahboom bridge
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot1 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0
+```
+
+### Terminal 2: run the recommended first feedback test
+
+Start with a 1 m straight-line reference at a conservative speed:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/yahboom2wd_ws/install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=straight \
+  linear_speed:=0.08 \
+  distance:=1.0 \
+  max_linear_speed:=0.12 \
+  max_angular_speed:=0.60
+```
+
+This test reads `/robot1/odom`, computes tracking error relative to the straight reference path, and publishes corrected commands to `/robot1/cmd_vel`.
+
+### Pure rotation test
+
+Use this to validate yaw direction, yaw-rate sign, and angular velocity scaling:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=pure_rotation \
+  angular_speed:=0.20 \
+  rotation_angle:=1.5708 \
+  turn_direction:=left
+```
+
+Expected nominal motion: approximately 90 degrees counterclockwise if the yaw sign convention is correct.
+
+### Constant arc test
+
+Use this to validate simultaneous forward and angular velocity commands:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=arc \
+  linear_speed:=0.08 \
+  radius:=1.0 \
+  arc_angle:=1.5708 \
+  turn_direction:=left
+```
+
+Expected nominal motion: a quarter-circle arc with radius 1 m.
+
+### Circle test
+
+Use this after the arc test to evaluate sustained constant-curvature tracking:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=circle \
+  linear_speed:=0.08 \
+  radius:=1.0 \
+  turn_direction:=left
+```
+
+Expected nominal motion: one full circle.
+
+### Stop-and-go test
+
+Use this to test repeated starts, stops, command timeout behavior, and transient response:
+
+```bash
+ros2 run yahboom_2wd_tests path_follower_node --ros-args \
+  -p robot_namespace:=robot1 \
+  -p scenario:=stop_and_go \
+  -p linear_speed:=0.08 \
+  -p move_time:=3.0 \
+  -p stop_time:=2.0 \
+  -p cycles:=3
+```
+
+### Sinusoidal path test
+
+Use this to test smooth changing-curvature commands. Run it only after straight, rotation, and arc tests behave correctly.
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=sinusoidal \
+  linear_speed:=0.06 \
+  amplitude:=0.20 \
+  wavelength:=2.0 \
+  path_length:=2.0
+```
+
+Expected nominal motion: forward progress with smooth left-right curvature.
+
+### Safety notes for path-following tests
+
+- Start with low speeds: `0.05` to `0.08 m/s`.
+- Keep at least 2 m of free space around the robot for arc, circle, and sinusoidal tests.
+- Be ready to stop the path follower with `Ctrl+C`.
+- If the robot turns the wrong way, stop the test and inspect yaw sign, `turn_direction`, and `angular_cmd_scale`.
+- If `/robot1/path_test/tracking_error.y` grows instead of decreasing, stop and inspect the heading/yaw convention.
+
 ## ROS 2 bag recording
 
 Use bag recording instead of terminal logs for calibration and debugging.
@@ -415,6 +637,63 @@ LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/robot1_forward_0p1_10s_* | head -1)
 ros2 bag info "$LATEST_BAG"
 ```
 
+
+## ROS 2 bag recording for feedback path-following tests
+
+For feedback path-following tests, record the reference and tracking-error topics in addition to the base robot topics.
+
+Start the Yahboom bridge in Terminal 1, then start the bag in Terminal 2:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/yahboom2wd_ws/install/setup.bash
+export ROS_DOMAIN_ID=42
+
+mkdir -p ~/yahboom2wd_ws/bags
+
+ros2 bag record -s mcap \
+  -o ~/yahboom2wd_ws/bags/robot1_feedback_straight_$(date +%Y%m%d_%H%M%S) \
+  /robot1/cmd_vel \
+  /robot1/odom \
+  /robot1/imu/data \
+  /robot1/battery_state \
+  /robot1/encoder_ticks \
+  /robot1/diagnostics \
+  /robot1/path_test/reference_pose \
+  /robot1/path_test/tracking_error \
+  /rosout \
+  /tf \
+  /tf_static
+```
+
+Then run the path follower in Terminal 3, for example:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/yahboom2wd_ws/install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=straight \
+  linear_speed:=0.08 \
+  distance:=1.0 \
+  max_linear_speed:=0.12 \
+  max_angular_speed:=0.60
+```
+
+After the test finishes, stop the bag recorder with `Ctrl+C`.
+
+For later tests, use descriptive bag names such as:
+
+```text
+robot1_feedback_rotation_YYYYMMDD_HHMMSS
+robot1_feedback_arc_YYYYMMDD_HHMMSS
+robot1_feedback_circle_YYYYMMDD_HHMMSS
+robot1_feedback_stopgo_YYYYMMDD_HHMMSS
+robot1_feedback_sinusoidal_YYYYMMDD_HHMMSS
+```
+
 ## Plotting a recorded bag
 
 Copy or keep `plot_yahboom_bag.py` on the Raspberry Pi, for example:
@@ -454,12 +733,22 @@ encoder_delta_ticks.png
 imu_angular_velocity.png
 ```
 
-For calibration, compare:
+For feedback path-following bags, also inspect the reference and tracking-error signals. If the plotting script has not yet been extended for those topics, use `ros2 bag info`, `ros2 topic echo` during live tests, or extend the plotter to read:
+
+```text
+/robot1/path_test/reference_pose
+/robot1/path_test/tracking_error
+```
+
+For calibration and path-following validation, compare:
 
 ```text
 physical tape distance
 integrated commanded distance
 final odom displacement
+reference trajectory versus odometry trajectory
+lateral/cross-track error
+heading error
 encoder tick deltas of M2 and M4
 average odom speed
 ```
@@ -493,10 +782,15 @@ Use a shared `ROS_DOMAIN_ID`, ensure all machines are on the same LAN, and use c
 5. Launch `command_mode:=motion`.
 6. Verify `/robot1/cmd_vel` has one subscriber using `ros2 topic info -v /robot1/cmd_vel`.
 7. Test `/robot1/cmd_vel` at `0.05 m/s`.
-8. Record a bag during a 10-second straight-line test.
+8. Record a bag during a 10-second open-loop straight-line test.
 9. Plot the bag and compare physical distance, odometry, and encoder ticks.
 10. Adjust `linear_cmd_scale`, `angular_cmd_scale`, motor signs, or `wheel_separation` only after recording evidence.
-11. Repeat for all four robots with the same checklist.
+11. Add and build `yahboom_2wd_tests` under `~/yahboom2wd_ws/src`.
+12. Run the feedback `straight` scenario and record `/robot1/path_test/reference_pose` and `/robot1/path_test/tracking_error`.
+13. Run `pure_rotation`, then `arc`, then `circle`, then `stop_and_go`, then `sinusoidal`.
+14. Compare reference trajectory, odometry trajectory, lateral error, heading error, encoder ticks, and IMU yaw rate for each test.
+15. Repeat the validated checklist for all four robots.
+16. Move to distributed MPC only after the single-robot feedback tests are repeatable and safe.
 
 ## Current known calibration for `yahboom1`
 
@@ -510,4 +804,18 @@ linear_cmd_scale   = 1.7
 angular_cmd_scale  = 1.0
 ROS_DOMAIN_ID      = 42
 ```
+
+## Current recommended single-robot feedback test settings for `yahboom1`
+
+Start with these conservative values:
+
+```text
+scenario             = straight
+linear_speed         = 0.08 m/s
+distance             = 1.0 m
+max_linear_speed     = 0.12 m/s
+max_angular_speed    = 0.60 rad/s
+```
+
+Proceed to arc/circle/sinusoidal tests only after the straight and pure-rotation tests are understood from bag data.
 
