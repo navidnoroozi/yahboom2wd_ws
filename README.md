@@ -541,6 +541,8 @@ ros2 launch yahboom_2wd_tests path_follower.launch.py \
   radius:=1.0 \
   arc_angle:=1.5708 \
   turn_direction:=left
+  max_angular_speed:=0.25 \
+  goal_tolerance_yaw:=0.025
 ```
 
 Expected nominal motion: a quarter-circle arc with radius 1 m.
