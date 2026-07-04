@@ -476,7 +476,8 @@ ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
   serial_port:=/dev/myserial \
   command_mode:=motion \
   linear_cmd_scale:=1.7 \
-  angular_cmd_scale:=1.0
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
 ```
 
 ### Terminal 2: run the recommended first feedback test
@@ -491,10 +492,10 @@ export ROS_DOMAIN_ID=42
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
   scenario:=straight \
-  linear_speed:=0.08 \
+  linear_speed:=0.06 \
   distance:=1.0 \
-  max_linear_speed:=0.12 \
-  max_angular_speed:=0.60
+  max_linear_speed:=0.09 \
+  max_angular_speed:=0.40
 ```
 
 This test reads `/robot1/odom`, computes tracking error relative to the straight reference path, and publishes corrected commands to `/robot1/cmd_vel`.
@@ -503,13 +504,27 @@ This test reads `/robot1/odom`, computes tracking error relative to the straight
 
 Use this to validate yaw direction, yaw-rate sign, and angular velocity scaling:
 
+Trun to LEFT:
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
   scenario:=pure_rotation \
-  angular_speed:=0.20 \
+  angular_speed:=0.12 \
   rotation_angle:=1.5708 \
-  turn_direction:=left
+  turn_direction:=left \
+  max_angular_speed:=0.25 \
+  goal_tolerance_yaw:=0.025
+```
+Turn to RIGHT:
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=pure_rotation \
+  angular_speed:=0.12 \
+  rotation_angle:=1.5708 \
+  turn_direction:=right \
+  max_angular_speed:=0.25 \
+  goal_tolerance_yaw:=0.025
 ```
 
 Expected nominal motion: approximately 90 degrees counterclockwise if the yaw sign convention is correct.
@@ -676,10 +691,10 @@ export ROS_DOMAIN_ID=42
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
   scenario:=straight \
-  linear_speed:=0.08 \
+  linear_speed:=0.06 \
   distance:=1.0 \
-  max_linear_speed:=0.12 \
-  max_angular_speed:=0.60
+  max_linear_speed:=0.09 \
+  max_angular_speed:=0.40
 ```
 
 After the test finishes, stop the bag recorder with `Ctrl+C`.
@@ -696,20 +711,27 @@ robot1_feedback_sinusoidal_YYYYMMDD_HHMMSS
 
 ## Plotting a recorded bag
 
-Copy or keep `plot_yahboom_bag.py` on the Raspberry Pi, for example:
+Keep `plot_yahboom_bag.py` on the Raspberry Pi:
 
 ```text
 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py
 ```
-
-Run:
+### General pattern for any latest robot1 feedback bag:
+For any feedback test scenario inclduing `straight`, `pure_rotation` etc., run:
 
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/yahboom2wd_ws/install/setup.bash
 export ROS_DOMAIN_ID=42
 
-LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/robot1_forward_0p1_10s_* | head -1)
+LATEST_BAG=$(find ~/yahboom2wd_ws/bags \
+  -maxdepth 1 \
+  -type d \
+  -name "robot1_feedback_*" \
+  -printf "%T@ %p\n" \
+  | sort -nr \
+  | head -1 \
+  | cut -d' ' -f2-)
 
 python3 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py \
   --bag "$LATEST_BAG" \
