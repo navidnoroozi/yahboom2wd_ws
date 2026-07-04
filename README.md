@@ -19,13 +19,23 @@ wheel_radius     = 0.0325 m
 wheel_separation = 0.120 m
 ```
 
-The straight-line velocity command was empirically calibrated on `yahboom1`:
+The current calibrated launch parameters for `yahboom1` are:
 
 ```text
-linear_cmd_scale = 1.7
+linear_cmd_scale  = 1.7
+angular_cmd_scale = 1.0
+odom_linear_scale = 1.5
 ```
 
-With this value, the command below moved the robot approximately 1 m in the x direction:
+Interpretation:
+
+```text
+linear_cmd_scale  -> command-side calibration: scales cmd_vel.linear.x before sending it to the Yahboom board
+angular_cmd_scale -> command-side calibration: scales cmd_vel.angular.z before sending it to the Yahboom board
+odom_linear_scale -> odometry-side calibration: scales board-reported linear velocity before integrating /robot1/odom
+```
+
+The open-loop straight-line velocity command was empirically calibrated on `yahboom1`:
 
 ```bash
 timeout 10s ros2 topic pub /robot1/cmd_vel geometry_msgs/msg/Twist \
@@ -37,6 +47,16 @@ The command publishes `0.1 m/s` at 10 Hz for 10 seconds, so the expected nominal
 ```text
 0.1 m/s * 10 s = 1.0 m
 ```
+
+With `linear_cmd_scale = 1.7`, the open-loop command moves the robot approximately 1 m in the x direction.
+
+During the first odometry-feedback `straight` test, `/robot1/odom` reported approximately 1.0 m while the physical tape measurement was approximately 1.5 m. This showed that the board-reported linear odometry was under-scaled. The bridge was therefore extended with:
+
+```text
+odom_linear_scale = 1.5
+```
+
+After adding `odom_linear_scale = 1.5`, the feedback `straight` test with a 1.0 m reference produced approximately 1.0 m physical travel. Keep this value for `yahboom1` unless repeated 1 m tests show a systematic physical error larger than about 3-5 cm.
 
 ## Packages
 
@@ -115,7 +135,7 @@ Published:
 
 - `/robot1/cmd_vel` (`geometry_msgs/msg/Twist`)
 - `/robot1/path_test/reference_pose` (`geometry_msgs/msg/PoseStamped`)
-- `/robot1/path_test/tracking_error` (`geometry_msgs/msg/Vector3`)
+- `/robot1/path_test/tracking_error` (`geometry_msgs/msg/Vector3Stamped`)
 
 The `tracking_error` topic is intended for quick plotting and bag inspection:
 
@@ -145,14 +165,16 @@ Use the following development order:
 
 1. **Open-loop bridge verification**: run the calibrated straight-line `cmd_vel` test and confirm approximately 1 m travel for the 10 s command.
 2. **Feedback straight-line tracking**: run the `straight` scenario with odometry feedback and check that lateral and heading errors remain small.
-3. **Yaw and angular-command validation**: run `pure_rotation` and verify yaw direction and approximate rotation angle.
+3. **Yaw and angular-command validation**: run `pure_rotation` and verify yaw direction, yaw-rate sign, final rotation angle, and automatic stopping.
 4. **Constant-curvature validation**: run `arc` and `circle` to validate simultaneous `linear.x` and `angular.z` commands.
 5. **Command-transient validation**: run `stop_and_go` to check stopping, watchdog behavior, and repeated starts.
 6. **Changing-curvature validation**: run `sinusoidal` to test smooth left-right curvature transitions.
 7. **Bag-based analysis**: record every important test and inspect `/robot1/cmd_vel`, `/robot1/odom`, `/robot1/path_test/reference_pose`, `/robot1/path_test/tracking_error`, encoders, IMU, and diagnostics.
 8. **MPC readiness decision**: only move to distributed MPC after the single robot can follow the standard references with predictable errors.
 
-The first recommended feedback test is the **straight** scenario. It is the simplest way to separate three issues: command delivery, linear velocity calibration, and odometry-feedback correction.
+The first feedback test was the **straight** scenario. It separated three issues: command delivery, linear command calibration, and odometry-feedback scaling.
+
+The second feedback test was the **pure_rotation** scenario. It separated yaw sign, angular command behavior, and stopping logic.
 
 Supported scenarios in `yahboom_2wd_tests`:
 
@@ -164,6 +186,17 @@ circle
 stop_and_go
 sinusoidal
 ```
+
+### Development observations so far
+
+- The robot did not receive `/robot1/cmd_vel` when Terminal 2 forgot `export ROS_DOMAIN_ID=42`. All terminals must use the same DDS domain.
+- The open-loop straight test showed that `linear_cmd_scale = 1.7` is a good command-side calibration for `yahboom1`.
+- The first feedback straight test physically traveled about 1.5 m for a 1.0 m reference, while the plots showed approximately 1.0 m odometry travel. This identified an odometry scaling mismatch.
+- Adding `odom_linear_scale = 1.5` to the Yahboom bridge corrected the feedback straight test to approximately 1.0 m physical travel.
+- The first pure-rotation test reached nearly 90 degrees but did not stop automatically. The reason was that the generic full-pose finish condition required small x/y error as well as small yaw error.
+- The `pure_rotation` logic was fixed so that it uses yaw-only completion, commands `linear.x = 0.0`, and ignores small x/y odometry drift for stopping.
+- The refined pure-rotation settings `angular_speed = 0.12`, `max_angular_speed = 0.25`, and `goal_tolerance_yaw = 0.025` produced a slower and more accurate approximately 90-degree turn.
+- The next planned validation is the **constant arc** test, because it is the first test combining forward motion and yaw motion under odometry feedback.
 
 ## Role of `ROS_DOMAIN_ID`
 
@@ -225,10 +258,17 @@ vx_board = linear_cmd_scale  * cmd_vel.linear.x
 wz_board = angular_cmd_scale * cmd_vel.angular.z
 ```
 
-The current calibrated straight-line value for `yahboom1` is:
+The current calibrated command-side values for `yahboom1` are:
 
 ```text
-linear_cmd_scale = 1.7
+linear_cmd_scale  = 1.7
+angular_cmd_scale = 1.0
+```
+
+The current odometry-side value is configured separately in the bridge:
+
+```text
+odom_linear_scale = 1.5
 ```
 
 ### `pwm_diff` mode, commissioning fallback
@@ -346,7 +386,8 @@ ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
   serial_port:=/dev/myserial \
   command_mode:=motion \
   linear_cmd_scale:=1.7 \
-  angular_cmd_scale:=1.0
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
 ```
 
 The launch should show that both nodes started:
@@ -463,6 +504,19 @@ source install/setup.bash
 
 The Yahboom bridge must already be running in Terminal 1 before starting a feedback path-following test.
 
+### Single-robot feedback test progress
+
+| Order | Scenario | Main objective | Current result on `yahboom1` | Status | Next action |
+|---:|---|---|---|---|---|
+| 1 | `straight` | Validate odometry-feedback tracking of a 1.0 m forward reference | After adding `odom_linear_scale = 1.5`, the robot traveled approximately 1.0 m physically for a 1.0 m reference | Passed | Keep as baseline calibration test |
+| 2 | `pure_rotation` | Validate yaw sign, angular command behavior, and automatic stopping | After fixing yaw-only stopping and using slower settings, the robot turned approximately 90 degrees and stopped automatically | Passed | Keep as angular baseline test |
+| 3 | `arc` | Validate simultaneous `linear.x` and `angular.z` under feedback | Not tested yet | Next | Run quarter-circle constant arc test |
+| 4 | `circle` | Validate sustained constant-curvature tracking | Not tested yet | Pending | Run only after `arc` behaves correctly |
+| 5 | `stop_and_go` | Validate repeated starts/stops and transient behavior | Not tested yet | Pending | Run after constant-curvature tests |
+| 6 | `sinusoidal` | Validate smooth left-right changing curvature | Not tested yet | Pending | Run last, after straight/rotation/arc/circle are stable |
+
+The progress table should be updated after every bagged experiment. Keep the terminal command, bag folder name, physical observation, and plotted result together so that calibration decisions are traceable.
+
 ### Terminal 1: launch the Yahboom bridge
 
 ```bash
@@ -504,7 +558,7 @@ This test reads `/robot1/odom`, computes tracking error relative to the straight
 
 Use this to validate yaw direction, yaw-rate sign, and angular velocity scaling:
 
-Trun to LEFT:
+Turn to LEFT:
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
@@ -527,25 +581,33 @@ ros2 launch yahboom_2wd_tests path_follower.launch.py \
   goal_tolerance_yaw:=0.025
 ```
 
-Expected nominal motion: approximately 90 degrees counterclockwise if the yaw sign convention is correct.
+Expected nominal motion: approximately 90 degrees counterclockwise for `turn_direction:=left`, and approximately 90 degrees clockwise for `turn_direction:=right`.
+
+Development note: the `pure_rotation` scenario must stop based on yaw error only. It should command `linear.x = 0.0` throughout the test. Small x/y odometry drift during in-place rotation should not prevent the test from finishing.
 
 ### Constant arc test
 
-Use this to validate simultaneous forward and angular velocity commands:
+Use this to validate simultaneous forward and angular velocity commands. This is the next test after `straight` and `pure_rotation`.
+
+Start conservatively with a left quarter-circle of radius 1 m:
 
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
   scenario:=arc \
-  linear_speed:=0.08 \
+  linear_speed:=0.06 \
   radius:=1.0 \
   arc_angle:=1.5708 \
-  turn_direction:=left
+  turn_direction:=left \
+  max_linear_speed:=0.09 \
   max_angular_speed:=0.25 \
-  goal_tolerance_yaw:=0.025
+  goal_tolerance_xy:=0.04 \
+  goal_tolerance_yaw:=0.04
 ```
 
-Expected nominal motion: a quarter-circle arc with radius 1 m.
+Expected nominal motion: a quarter-circle arc with radius 1 m. The final pose should be approximately 1 m forward, 1 m lateral to the left, and 90 degrees left relative to the start pose, in the local test frame.
+
+After the left arc behaves correctly, repeat with `turn_direction:=right` to check left/right symmetry.
 
 ### Circle test
 
@@ -704,11 +766,30 @@ After the test finishes, stop the bag recorder with `Ctrl+C`.
 For later tests, use descriptive bag names such as:
 
 ```text
+robot1_feedback_straight_YYYYMMDD_HHMMSS
 robot1_feedback_rotation_YYYYMMDD_HHMMSS
 robot1_feedback_arc_YYYYMMDD_HHMMSS
 robot1_feedback_circle_YYYYMMDD_HHMMSS
 robot1_feedback_stopgo_YYYYMMDD_HHMMSS
 robot1_feedback_sinusoidal_YYYYMMDD_HHMMSS
+```
+
+For the next constant arc test, use for example:
+
+```bash
+ros2 bag record -s mcap \
+  -o ~/yahboom2wd_ws/bags/robot1_feedback_arc_$(date +%Y%m%d_%H%M%S) \
+  /robot1/cmd_vel \
+  /robot1/odom \
+  /robot1/imu/data \
+  /robot1/battery_state \
+  /robot1/encoder_ticks \
+  /robot1/diagnostics \
+  /robot1/path_test/reference_pose \
+  /robot1/path_test/tracking_error \
+  /rosout \
+  /tf \
+  /tf_static
 ```
 
 ## Plotting a recorded bag
@@ -808,7 +889,7 @@ Use a shared `ROS_DOMAIN_ID`, ensure all machines are on the same LAN, and use c
 7. Test `/robot1/cmd_vel` at `0.05 m/s`.
 8. Record a bag during a 10-second open-loop straight-line test.
 9. Plot the bag and compare physical distance, odometry, and encoder ticks.
-10. Adjust `linear_cmd_scale`, `angular_cmd_scale`, motor signs, or `wheel_separation` only after recording evidence.
+10. Adjust `linear_cmd_scale`, `angular_cmd_scale`, `odom_linear_scale`, motor signs, or `wheel_separation` only after recording evidence.
 11. Add and build `yahboom_2wd_tests` under `~/yahboom2wd_ws/src`.
 12. Run the feedback `straight` scenario and record `/robot1/path_test/reference_pose` and `/robot1/path_test/tracking_error`.
 13. Run `pure_rotation`, then `arc`, then `circle`, then `stop_and_go`, then `sinusoidal`.
@@ -826,20 +907,76 @@ right_motor_port   = M4
 command_mode       = motion
 linear_cmd_scale   = 1.7
 angular_cmd_scale  = 1.0
+odom_linear_scale  = 1.5
 ROS_DOMAIN_ID      = 42
 ```
 
+The values above are the current baseline for `yahboom1`. Do not change them for the next arc test unless a new bagged experiment clearly shows a repeatable error.
+
 ## Current recommended single-robot feedback test settings for `yahboom1`
 
-Start with these conservative values:
+Use the following bridge settings in Terminal 1:
 
-```text
-scenario             = straight
-linear_speed         = 0.08 m/s
-distance             = 1.0 m
-max_linear_speed     = 0.12 m/s
-max_angular_speed    = 0.60 rad/s
+```bash
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot1 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
 ```
 
-Proceed to arc/circle/sinusoidal tests only after the straight and pure-rotation tests are understood from bag data.
+### Passed baseline tests
+
+Straight-line feedback test:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=straight \
+  linear_speed:=0.06 \
+  distance:=1.0 \
+  max_linear_speed:=0.09 \
+  max_angular_speed:=0.40
+```
+
+Pure-rotation feedback test:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=pure_rotation \
+  angular_speed:=0.12 \
+  rotation_angle:=1.5708 \
+  turn_direction:=left \
+  max_angular_speed:=0.25 \
+  goal_tolerance_yaw:=0.025
+```
+
+The right-turn version should use the same values with:
+
+```text
+turn_direction = right
+```
+
+### Next test to run
+
+Constant arc, left quarter circle:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=arc \
+  linear_speed:=0.06 \
+  radius:=1.0 \
+  arc_angle:=1.5708 \
+  turn_direction:=left \
+  max_linear_speed:=0.09 \
+  max_angular_speed:=0.25 \
+  goal_tolerance_xy:=0.04 \
+  goal_tolerance_yaw:=0.04
+```
+
+Proceed to `circle`, `stop_and_go`, and `sinusoidal` only after the constant arc test is understood from bag data.
 
