@@ -107,6 +107,7 @@ class Yahboom2WDNode(Node):
         self.declare_parameter('use_imu_yaw_for_odom', True)
         self.declare_parameter('invert_yaw', False)
         self.declare_parameter('reset_odom_on_start', True)
+        self.declare_parameter('odom_linear_scale', 1.0)
 
         self.serial_port = str(self.get_parameter('serial_port').value)
         self.car_type = int(self.get_parameter('car_type').value)
@@ -130,6 +131,7 @@ class Yahboom2WDNode(Node):
         self.use_imu_yaw_for_odom = bool(self.get_parameter('use_imu_yaw_for_odom').value)
         self.invert_yaw = bool(self.get_parameter('invert_yaw').value)
         self.reset_odom_on_start = bool(self.get_parameter('reset_odom_on_start').value)
+        self.odom_linear_scale = float(self.get_parameter('odom_linear_scale').value)
         self.yaw_offset: Optional[float] = None
 
         if self.command_mode not in ('motion', 'pwm_diff'):
@@ -197,7 +199,10 @@ class Yahboom2WDNode(Node):
             else:
                 self.apply_cmd_vel(self.current_cmd)
 
-        vx, vy, wz = self.safe_get_motion_data()
+        vx_raw, vy_raw, wz = self.safe_get_motion_data()
+        vx = vx_raw * self.odom_linear_scale
+        vy = vy_raw * self.odom_linear_scale
+
         roll, pitch, yaw = self.safe_get_imu_attitude()
         gx, gy, gz = self.safe_get_gyro()
         ax, ay, az = self.safe_get_accel()
@@ -406,6 +411,7 @@ class Yahboom2WDNode(Node):
             KeyValue(key='battery_voltage', value=f'{battery_voltage:.2f}'),
             KeyValue(key='left_motor_port', value=f'M{self.left_motor_port}'),
             KeyValue(key='right_motor_port', value=f'M{self.right_motor_port}'),
+            KeyValue(key='odom_linear_scale', value=f'{self.odom_linear_scale:.3f}'),
         ]
         msg = DiagnosticArray()
         msg.header.stamp = now_ros.to_msg()

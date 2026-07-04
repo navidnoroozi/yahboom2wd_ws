@@ -16,6 +16,7 @@ def generate_launch_description():
     wheel_separation = LaunchConfiguration('wheel_separation')
     linear_cmd_scale = LaunchConfiguration('linear_cmd_scale')
     angular_cmd_scale = LaunchConfiguration('angular_cmd_scale')
+    odom_linear_scale = LaunchConfiguration('odom_linear_scale')
 
     robot_xacro = PathJoinSubstitution([
         FindPackageShare('yahboom_2wd_description'),
@@ -39,6 +40,7 @@ def generate_launch_description():
         DeclareLaunchArgument('wheel_separation', default_value='0.120'),
         DeclareLaunchArgument('linear_cmd_scale', default_value='1.7'),
         DeclareLaunchArgument('angular_cmd_scale', default_value='1.0'),
+        DeclareLaunchArgument('odom_linear_scale', default_value='1.5'),
         DeclareLaunchArgument(
             'config_file',
             default_value=PathJoinSubstitution([
@@ -74,6 +76,7 @@ def generate_launch_description():
                         'wheel_separation': wheel_separation,
                         'linear_cmd_scale': linear_cmd_scale,
                         'angular_cmd_scale': angular_cmd_scale,
+                        'odom_linear_scale': odom_linear_scale,
                         'odom_frame_id': PythonExpression(["'", namespace, "/odom'"]),
                         'base_frame_id': PythonExpression(["'", namespace, "/base_footprint'"]),
                         'imu_frame_id': PythonExpression(["'", namespace, "/imu_link'"]),

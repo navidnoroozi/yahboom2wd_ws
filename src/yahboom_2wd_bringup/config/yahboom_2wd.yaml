@@ -28,6 +28,7 @@
 
     linear_cmd_scale: 1.7
     angular_cmd_scale: 1.0
+    odom_linear_scale: 1.5
     cmd_timeout_s: 0.50
     update_rate_hz: 30.0
 
