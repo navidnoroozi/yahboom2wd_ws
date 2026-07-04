@@ -232,6 +232,34 @@ class PathFollowerNode(Node):
             self._publish_zero()
             return
 
+        # pure_rotation is a yaw-only commissioning test. During an in-place
+        # rotation, a few centimeters of apparent x/y odometry drift can occur
+        # because of wheel slip, caster alignment, floor friction, or board
+        # velocity integration. Therefore this scenario must not use the generic
+        # full-pose completion condition and must not command linear velocity to
+        # correct x/y error. It finishes based on yaw error only.
+        if self.scenario == 'pure_rotation':
+            w_cmd = clamp(
+                ref_local.omega + self.ktheta * math.sin(eth),
+                -self.max_angular_speed,
+                self.max_angular_speed,
+            )
+            v_cmd = 0.0
+
+            if ref_local.done and abs(eth) < self.goal_tolerance_yaw:
+                self.finished = True
+                self.get_logger().info(
+                    'Pure rotation finished within yaw tolerance; sending zero velocity.'
+                )
+                self._publish_zero()
+                self.publish_reference_and_error(xr, yr, theta_r, ex, ey, eth)
+                return
+
+            self.publish_cmd(v_cmd, w_cmd)
+            self.publish_reference_and_error(xr, yr, theta_r, ex, ey, eth)
+            self._log_tracking(elapsed, xr, yr, theta_r, ex, ey, eth, v_cmd, w_cmd)
+            return
+
         # Mark completion once the reference generator is done and the robot is
         # close enough to the final pose. For stop-and-go and sinusoidal tests,
         # this prevents stopping too early if the robot lags behind slightly.
@@ -245,7 +273,10 @@ class PathFollowerNode(Node):
         v_cmd, w_cmd = self.feedback_law(ref_local.v, ref_local.omega, ex, ey, eth)
         self.publish_cmd(v_cmd, w_cmd)
         self.publish_reference_and_error(xr, yr, theta_r, ex, ey, eth)
+        self._log_tracking(elapsed, xr, yr, theta_r, ex, ey, eth, v_cmd, w_cmd)
 
+    def _log_tracking(self, elapsed: float, xr: float, yr: float, theta_r: float,
+                      ex: float, ey: float, eth: float, v_cmd: float, w_cmd: float) -> None:
         now = time.monotonic()
         if now - self.last_log_time > 1.0:
             self.get_logger().info(
