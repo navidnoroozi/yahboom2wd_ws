@@ -200,7 +200,9 @@ sinusoidal
 - The right **constant arc** test looked similar to the left arc test, but with opposite rotation direction. The trajectory was smooth and symmetric enough for commissioning, so the right arc test is considered passed.
 - The left and right **circle** tests both completed smooth full-circle trajectories. The final position error was roughly 15-20 cm, mainly visible as a y-axis offset. This is acceptable for first-run sustained-curvature commissioning and the circle test is considered passed with observation.
 - The repeated y-axis offset in the circle tests is most likely accumulated cross-track/yaw/curvature error over a long maneuver, not a reason to split global x/y odometry scaling. Keep `odom_linear_scale = 1.5` for now because it was calibrated by the straight test.
-- The next planned validation is the **stop-and-go** test, because it checks repeated starts, stops, and command-transient behavior before running changing-curvature sinusoidal paths.
+- The first stop-and-go run revealed a software issue in `ref_stop_and_go()`: after the third motion segment, the reference jumped from about `0.54 m` to about `0.72 m`, which added one unintended extra move segment. The reference generator was fixed so that the completed cycles are clamped at the configured number of cycles.
+- After fixing `ref_stop_and_go()`, the repeated stop-and-go test produced a final odometry displacement of about `0.57 m`, with `dy` close to zero, smooth straight motion, and two visible intermediate stop phases. The stop-and-go test is therefore considered passed for commissioning.
+- The next planned validation is the **sinusoidal** path test, because it checks smooth left-right changing curvature before moving toward MPC-style time-varying velocity commands.
 
 ## Role of `ROS_DOMAIN_ID`
 
@@ -518,8 +520,8 @@ The Yahboom bridge must already be running in Terminal 1 before starting a feedb
 | 3b | `arc` right | Check left/right symmetry for the same constant-curvature reference | Result looked similar to the left arc, with opposite rotation direction | Passed | Keep as right constant-curvature baseline |
 | 4a | `circle` left | Validate sustained left constant-curvature tracking | Smooth full-circle trajectory; final displacement roughly within 15-20 cm, mainly y-axis offset | Passed with observation | Keep as sustained left-turn baseline |
 | 4b | `circle` right | Validate sustained right constant-curvature tracking | Similar to the left circle, with opposite rotation direction and about 20 cm y-axis offset | Passed with observation | Keep as sustained right-turn baseline |
-| 5 | `stop_and_go` | Validate repeated starts/stops and transient behavior | Not tested yet | Next | Run conservative stop-and-go test |
-| 6 | `sinusoidal` | Validate smooth left-right changing curvature | Not tested yet | Pending | Run last, after stop-and-go is stable |
+| 5 | `stop_and_go` | Validate repeated starts/stops and transient behavior | After fixing `ref_stop_and_go()`, the robot moved smoothly straight, stopped twice between the three move phases, and ended around `0.57 m` for a `0.54 m` reference | Passed | Keep as transient-response baseline |
+| 6 | `sinusoidal` | Validate smooth left-right changing curvature | Not tested yet | Next | Run conservative low-amplitude sinusoidal test |
 
 The progress table should be updated after every bagged experiment. Keep the terminal command, bag folder name, physical observation, and plotted result together so that calibration decisions are traceable.
 
@@ -666,7 +668,7 @@ Keep `odom_linear_scale = 1.5` as the baseline because it is validated by the st
 
 Use this to test repeated starts, stops, command timeout behavior, transient response, and whether the robot remains well behaved when high-level commands switch between motion and zero velocity.
 
-Recommended conservative first run:
+The validated commissioning command is:
 
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
@@ -688,23 +690,41 @@ Expected nominal motion: three short forward motion segments separated by full s
 3 cycles * 3.0 s/cycle * 0.06 m/s = 0.54 m
 ```
 
-During each stop phase, `/robot1/cmd_vel.linear.x` should go close to zero and the robot should visibly stop. A small residual motion after each stop command is acceptable, but the robot should not keep creeping continuously. The final pose should be roughly 0.54 m forward from the start with small lateral/yaw drift.
+Development note: an earlier version of `ref_stop_and_go()` accidentally added one extra move segment and produced a reference jump from about `0.54 m` to about `0.72 m`. This was fixed by clamping the completed cycles at the configured number of cycles.
+
+After the fix, the stop-and-go test is considered passed for commissioning. The repeated run produced smooth straight motion, two visible intermediate stop phases, and final odometry around `0.57 m` with very small lateral drift. This is consistent with the expected `0.54 m` reference distance.
 
 ### Sinusoidal path test
 
-Use this to test smooth changing-curvature commands. Run it only after straight, rotation, and arc tests behave correctly.
+Use this to test smooth changing-curvature commands. Run it after `straight`, `pure_rotation`, left/right `arc`, left/right `circle`, and `stop_and_go` behave correctly.
+
+Start with a low-amplitude, conservative sinusoidal path:
 
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
   scenario:=sinusoidal \
-  linear_speed:=0.06 \
-  amplitude:=0.20 \
+  linear_speed:=0.05 \
+  amplitude:=0.10 \
   wavelength:=2.0 \
-  path_length:=2.0
+  path_length:=2.0 \
+  max_linear_speed:=0.075 \
+  max_angular_speed:=0.25 \
+  goal_tolerance_xy:=0.12 \
+  goal_tolerance_yaw:=0.10
 ```
 
-Expected nominal motion: forward progress with smooth left-right curvature.
+Expected nominal motion: the robot moves forward about `2 m` while smoothly changing curvature left and right. With `amplitude = 0.10 m` and `wavelength = 2.0 m`, the reference lateral deviation is small, approximately between `-0.10 m` and `+0.10 m`.
+
+The current implementation uses:
+
+```text
+y(x) = amplitude * sin(2*pi*x / wavelength)
+```
+
+Therefore, for `path_length = 2.0 m` and `wavelength = 2.0 m`, the path completes one sinusoidal wavelength and ends near `y = 0`. The initial and final path tangent are not exactly zero, so a small initial heading correction and a nonzero final heading reference are expected.
+
+The test passes if the robot follows a smooth S-shaped trajectory, alternates curvature without oscillatory instability, remains close to the reference path, and stops automatically near the end of the reference.
 
 ### Safety notes for path-following tests
 
@@ -826,11 +846,11 @@ robot1_feedback_stopgo_YYYYMMDD_HHMMSS
 robot1_feedback_sinusoidal_YYYYMMDD_HHMMSS
 ```
 
-For the next stop-and-go test, use for example:
+For the next sinusoidal test, use for example:
 
 ```bash
 ros2 bag record -s mcap \
-  -o ~/yahboom2wd_ws/bags/robot1_feedback_stopgo_$(date +%Y%m%d_%H%M%S) \
+  -o ~/yahboom2wd_ws/bags/robot1_feedback_sinusoidal_$(date +%Y%m%d_%H%M%S) \
   /robot1/cmd_vel \
   /robot1/odom \
   /robot1/imu/data \
@@ -963,7 +983,7 @@ odom_linear_scale  = 1.5
 ROS_DOMAIN_ID      = 42
 ```
 
-The values above are the current baseline for `yahboom1`. Do not change them for the stop-and-go test unless a new bagged experiment clearly shows a repeatable error.
+The values above are the current baseline for `yahboom1`. Do not change them for the sinusoidal test unless a new bagged experiment clearly shows a repeatable error.
 
 ## Current recommended single-robot feedback test settings for `yahboom1`
 
@@ -1047,8 +1067,6 @@ ros2 launch yahboom_2wd_tests path_follower.launch.py \
 
 Right circle: same values with `turn_direction:=right`.
 
-### Next test to run
-
 Stop-and-go feedback test:
 
 ```bash
@@ -1065,4 +1083,26 @@ ros2 launch yahboom_2wd_tests path_follower.launch.py \
   goal_tolerance_yaw:=0.06
 ```
 
-Expected nominal behavior: three forward segments of about 18 cm each, separated by 2 s stop phases. The total reference forward distance is about 0.54 m. Proceed to `sinusoidal` only after the stop-and-go test is understood from bag data.
+After fixing `ref_stop_and_go()`, this test passed with smooth straight motion, two intermediate stop phases, and final odometry close to the expected `0.54 m` reference distance.
+
+### Next test to run
+
+Sinusoidal feedback test:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=sinusoidal \
+  linear_speed:=0.05 \
+  amplitude:=0.10 \
+  wavelength:=2.0 \
+  path_length:=2.0 \
+  max_linear_speed:=0.075 \
+  max_angular_speed:=0.25 \
+  goal_tolerance_xy:=0.12 \
+  goal_tolerance_yaw:=0.10
+```
+
+Expected nominal behavior: the robot should move forward about `2 m` while performing a gentle left-right sinusoidal path. The lateral deviation should stay small, about `±0.10 m`, and the motion should look smooth rather than oscillatory or jerky. The robot should stop automatically near the end of the reference.
+
+Proceed toward the distributed MPC planner only after the sinusoidal test is understood from bag data, because this is the first test with continuously changing curvature.
