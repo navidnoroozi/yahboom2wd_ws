@@ -197,7 +197,10 @@ sinusoidal
 - The `pure_rotation` logic was fixed so that it uses yaw-only completion, commands `linear.x = 0.0`, and ignores small x/y odometry drift for stopping.
 - The refined pure-rotation settings `angular_speed = 0.12`, `max_angular_speed = 0.25`, and `goal_tolerance_yaw = 0.025` produced a slower and more accurate approximately 90-degree turn.
 - The left **constant arc** test was run after `straight` and `pure_rotation`. It turned left, stopped automatically, reached approximately 90 degrees, and ended close to the expected quarter-circle endpoint. The observed endpoint was within roughly 10 cm and the trajectory shape was smooth, so the left arc test is considered passed for commissioning.
-- The next planned validation is the **right constant arc** test, because it checks whether the same constant-curvature behavior is symmetric for right turns before moving to the full `circle` test.
+- The right **constant arc** test looked similar to the left arc test, but with opposite rotation direction. The trajectory was smooth and symmetric enough for commissioning, so the right arc test is considered passed.
+- The left and right **circle** tests both completed smooth full-circle trajectories. The final position error was roughly 15-20 cm, mainly visible as a y-axis offset. This is acceptable for first-run sustained-curvature commissioning and the circle test is considered passed with observation.
+- The repeated y-axis offset in the circle tests is most likely accumulated cross-track/yaw/curvature error over a long maneuver, not a reason to split global x/y odometry scaling. Keep `odom_linear_scale = 1.5` for now because it was calibrated by the straight test.
+- The next planned validation is the **stop-and-go** test, because it checks repeated starts, stops, and command-transient behavior before running changing-curvature sinusoidal paths.
 
 ## Role of `ROS_DOMAIN_ID`
 
@@ -512,10 +515,11 @@ The Yahboom bridge must already be running in Terminal 1 before starting a feedb
 | 1 | `straight` | Validate odometry-feedback tracking of a 1.0 m forward reference | After adding `odom_linear_scale = 1.5`, the robot traveled approximately 1.0 m physically for a 1.0 m reference | Passed | Keep as baseline calibration test |
 | 2 | `pure_rotation` | Validate yaw sign, angular command behavior, and automatic stopping | After fixing yaw-only stopping and using slower settings, the robot turned approximately 90 degrees and stopped automatically | Passed | Keep as angular baseline test |
 | 3a | `arc` left | Validate simultaneous `linear.x` and `angular.z` for a left quarter circle | Endpoint stayed within roughly 10 cm of the expected `(x, y) = (1.0, 1.0)` m target and the trajectory was smooth | Passed | Keep as left constant-curvature baseline |
-| 3b | `arc` right | Check left/right symmetry for the same constant-curvature reference | Not tested yet | Next | Run right quarter-circle constant arc test |
-| 4 | `circle` | Validate sustained constant-curvature tracking | Not tested yet | Pending | Run only after left and right arc tests behave correctly |
-| 5 | `stop_and_go` | Validate repeated starts/stops and transient behavior | Not tested yet | Pending | Run after constant-curvature tests |
-| 6 | `sinusoidal` | Validate smooth left-right changing curvature | Not tested yet | Pending | Run last, after straight/rotation/arc/circle are stable |
+| 3b | `arc` right | Check left/right symmetry for the same constant-curvature reference | Result looked similar to the left arc, with opposite rotation direction | Passed | Keep as right constant-curvature baseline |
+| 4a | `circle` left | Validate sustained left constant-curvature tracking | Smooth full-circle trajectory; final displacement roughly within 15-20 cm, mainly y-axis offset | Passed with observation | Keep as sustained left-turn baseline |
+| 4b | `circle` right | Validate sustained right constant-curvature tracking | Similar to the left circle, with opposite rotation direction and about 20 cm y-axis offset | Passed with observation | Keep as sustained right-turn baseline |
+| 5 | `stop_and_go` | Validate repeated starts/stops and transient behavior | Not tested yet | Next | Run conservative stop-and-go test |
+| 6 | `sinusoidal` | Validate smooth left-right changing curvature | Not tested yet | Pending | Run last, after stop-and-go is stable |
 
 The progress table should be updated after every bagged experiment. Keep the terminal command, bag folder name, physical observation, and plotted result together so that calibration decisions are traceable.
 
@@ -629,32 +633,62 @@ Expected nominal motion for the right test: a quarter-circle arc with radius 1 m
 
 ### Circle test
 
-Use this after the arc test to evaluate sustained constant-curvature tracking:
+Use this after the arc test to evaluate sustained constant-curvature tracking. The left and right circle tests have passed for first-run commissioning with the following conservative settings:
 
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
   scenario:=circle \
-  linear_speed:=0.08 \
-  radius:=1.0 \
-  turn_direction:=left
+  linear_speed:=0.05 \
+  radius:=0.6 \
+  turn_direction:=left \
+  max_linear_speed:=0.075 \
+  max_angular_speed:=0.20 \
+  goal_tolerance_xy:=0.20 \
+  goal_tolerance_yaw:=0.08
 ```
 
-Expected nominal motion: one full circle.
+For the right circle, use the same values and change only:
+
+```text
+turn_direction = right
+```
+
+Expected nominal motion: one full circle, returning close to the start pose. In the first left and right circle tests, the final position error was approximately within 15-20 cm, mainly visible as a y-axis offset. This is acceptable at this commissioning stage because the trajectories were smooth, the rotation directions were correct, and no strong spiral or oscillation appeared.
+
+#### Note on the observed circle y-axis offset
+
+Do not split `odom_linear_scale` into global `odom_linear_scale_x` and `odom_linear_scale_y` for now. In the Yahboom bridge, the board-reported body-frame linear velocity is scaled and then rotated into the odom frame using the current yaw estimate. A final y-offset after a full circle is therefore more likely caused by accumulated heading/curvature error, wheel slip, caster behavior, floor friction, or small left/right drive asymmetry than by an independent global y-scale error.
+
+Keep `odom_linear_scale = 1.5` as the baseline because it is validated by the straight-line feedback test. If circle accuracy later becomes critical, investigate yaw/curvature calibration, controller gains, repeated left/right averages, and eventually sensor fusion before adding separate x/y odometry scaling.
 
 ### Stop-and-go test
 
-Use this to test repeated starts, stops, command timeout behavior, and transient response:
+Use this to test repeated starts, stops, command timeout behavior, transient response, and whether the robot remains well behaved when high-level commands switch between motion and zero velocity.
+
+Recommended conservative first run:
 
 ```bash
-ros2 run yahboom_2wd_tests path_follower_node --ros-args \
-  -p robot_namespace:=robot1 \
-  -p scenario:=stop_and_go \
-  -p linear_speed:=0.08 \
-  -p move_time:=3.0 \
-  -p stop_time:=2.0 \
-  -p cycles:=3
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=stop_and_go \
+  linear_speed:=0.06 \
+  move_time:=3.0 \
+  stop_time:=2.0 \
+  cycles:=3 \
+  max_linear_speed:=0.09 \
+  max_angular_speed:=0.30 \
+  goal_tolerance_xy:=0.08 \
+  goal_tolerance_yaw:=0.06
 ```
+
+Expected nominal motion: three short forward motion segments separated by full stops. With the values above, the reference forward distance is approximately:
+
+```text
+3 cycles * 3.0 s/cycle * 0.06 m/s = 0.54 m
+```
+
+During each stop phase, `/robot1/cmd_vel.linear.x` should go close to zero and the robot should visibly stop. A small residual motion after each stop command is acceptable, but the robot should not keep creeping continuously. The final pose should be roughly 0.54 m forward from the start with small lateral/yaw drift.
 
 ### Sinusoidal path test
 
@@ -792,11 +826,11 @@ robot1_feedback_stopgo_YYYYMMDD_HHMMSS
 robot1_feedback_sinusoidal_YYYYMMDD_HHMMSS
 ```
 
-For the next right constant arc test, use for example:
+For the next stop-and-go test, use for example:
 
 ```bash
 ros2 bag record -s mcap \
-  -o ~/yahboom2wd_ws/bags/robot1_feedback_arc_right_$(date +%Y%m%d_%H%M%S) \
+  -o ~/yahboom2wd_ws/bags/robot1_feedback_stopgo_$(date +%Y%m%d_%H%M%S) \
   /robot1/cmd_vel \
   /robot1/odom \
   /robot1/imu/data \
@@ -929,7 +963,7 @@ odom_linear_scale  = 1.5
 ROS_DOMAIN_ID      = 42
 ```
 
-The values above are the current baseline for `yahboom1`. Do not change them for the next arc test unless a new bagged experiment clearly shows a repeatable error.
+The values above are the current baseline for `yahboom1`. Do not change them for the stop-and-go test unless a new bagged experiment clearly shows a repeatable error.
 
 ## Current recommended single-robot feedback test settings for `yahboom1`
 
@@ -994,22 +1028,41 @@ ros2 launch yahboom_2wd_tests path_follower.launch.py \
   goal_tolerance_yaw:=0.05
 ```
 
-### Next test to run
+Right constant-arc feedback test: same values with `turn_direction:=right`.
 
-Right constant arc, quarter circle:
+Left/right circle feedback tests:
 
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
-  scenario:=arc \
+  scenario:=circle \
   linear_speed:=0.05 \
-  radius:=1.0 \
-  arc_angle:=1.5708 \
-  turn_direction:=right \
+  radius:=0.6 \
+  turn_direction:=left \
   max_linear_speed:=0.075 \
   max_angular_speed:=0.20 \
-  goal_tolerance_xy:=0.08 \
-  goal_tolerance_yaw:=0.05
+  goal_tolerance_xy:=0.20 \
+  goal_tolerance_yaw:=0.08
 ```
 
-Proceed to `circle`, `stop_and_go`, and `sinusoidal` only after both left and right constant arc tests are understood from bag data.
+Right circle: same values with `turn_direction:=right`.
+
+### Next test to run
+
+Stop-and-go feedback test:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=stop_and_go \
+  linear_speed:=0.06 \
+  move_time:=3.0 \
+  stop_time:=2.0 \
+  cycles:=3 \
+  max_linear_speed:=0.09 \
+  max_angular_speed:=0.30 \
+  goal_tolerance_xy:=0.08 \
+  goal_tolerance_yaw:=0.06
+```
+
+Expected nominal behavior: three forward segments of about 18 cm each, separated by 2 s stop phases. The total reference forward distance is about 0.54 m. Proceed to `sinusoidal` only after the stop-and-go test is understood from bag data.
