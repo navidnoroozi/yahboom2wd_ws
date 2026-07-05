@@ -349,21 +349,44 @@ class PathFollowerNode(Node):
     def ref_stop_and_go(self, t: float) -> ReferenceState:
         period = self.move_time + self.stop_time
         total_duration = self.cycles * period
-        t_clamped = min(t, total_duration)
-        full_cycles = int(t_clamped // period) if period > 0.0 else self.cycles
-        rem = t_clamped - full_cycles * period
 
-        moving_time = full_cycles * self.move_time
-        is_moving = rem < self.move_time and t < total_duration
-        if is_moving:
-            moving_time += rem
+        if period <= 0.0:
+            return ReferenceState(
+                x=0.0,
+                y=0.0,
+                theta=0.0,
+                v=0.0,
+                omega=0.0,
+                done=True,
+            )
+
+        t_clamped = min(max(t, 0.0), total_duration)
+
+        completed_cycles = int(t_clamped // period)
+        completed_cycles = min(completed_cycles, self.cycles)
+
+        rem = t_clamped - completed_cycles * period
+
+        if completed_cycles >= self.cycles:
+            moving_time = self.cycles * self.move_time
+            is_moving = False
         else:
-            moving_time += self.move_time
+            moving_time = completed_cycles * self.move_time
+            moving_time += min(rem, self.move_time)
+            is_moving = rem < self.move_time and t < total_duration
 
         x = self.linear_speed * moving_time
         done = t >= total_duration
         v = self.linear_speed if is_moving and not done else 0.0
-        return ReferenceState(x=x, y=0.0, theta=0.0, v=v, omega=0.0, done=done)
+
+        return ReferenceState(
+            x=x,
+            y=0.0,
+            theta=0.0,
+            v=v,
+            omega=0.0,
+            done=done,
+        )
 
     def ref_sinusoidal(self, t: float) -> ReferenceState:
         # Use x-progress as the independent variable. This is simple and stable
