@@ -1,0 +1,263 @@
+Yahboom 2WD bag summary
+=======================
+
+bag_path: /home/pi/yahboom2wd_ws/bags/robot1_feedback_circle_right_20260705_025310
+storage_id: mcap
+namespace: robot1
+
+Selected topics:
+  cmd_vel     : /robot1/cmd_vel
+  odom        : /robot1/odom
+  imu         : /robot1/imu/data
+  battery     : /robot1/battery_state
+  encoders    : /robot1/encoder_ticks
+  diagnostics : /robot1/diagnostics
+  rosout      : /rosout
+
+Message counts:
+  /robot1/battery_state: 3051
+  /robot1/cmd_vel: 1925
+  /robot1/diagnostics: 100
+  /robot1/encoder_ticks: 3052
+  /robot1/imu/data: 3052
+  /robot1/odom: 3052
+  /rosout: 113
+
+Command summary:
+  cmd duration from bag samples: 96.194 s
+  average cmd linear.x: 0.0379 m/s
+  integrated commanded distance: 3.6451 m
+
+Odometry summary:
+  final dx: 0.0476 m
+  final dy: 0.1967 m
+  final displacement: 0.2023 m
+  path length: 4.5368 m
+  average odom speed: 0.0446 m/s
+
+Encoder delta summary:
+  M1 delta: 0 ticks
+  M2 delta: 42571 ticks
+  M3 delta: 0 ticks
+  M4 delta: 36209 ticks
+
+Battery summary:
+  min voltage: 12.00 V
+  max voltage: 12.10 V
+
+Rosout messages:
+       0.000 s [20] robot1.yahboom_2wd_node: Yahboom 2WD interface started on /dev/myserial; command_mode=motion; left=M2, right=M4
+       0.000 s [20] robot1.yahboom_2wd_node: Using initial IMU yaw offset for odom: -1.0562 rad
+       0.040 s [20] rosbag2_recorder: Event publisher thread: Starting
+       0.040 s [20] rosbag2_recorder: Subscribed to topic '/tf'
+       0.040 s [20] rosbag2_recorder: Subscribed to topic '/rosout'
+       0.040 s [20] rosbag2_recorder: Subscribed to topic '/robot1/imu/data'
+       0.040 s [20] rosbag2_recorder: Subscribed to topic '/tf_static'
+       0.040 s [20] rosbag2_recorder: Subscribed to topic '/robot1/encoder_ticks'
+       0.040 s [20] rosbag2_recorder: Subscribed to topic '/robot1/diagnostics'
+       0.040 s [20] rosbag2_recorder: Subscribed to topic '/robot1/odom'
+       0.040 s [20] rosbag2_recorder: Subscribed to topic '/robot1/battery_state'
+       0.040 s [20] rosbag2_recorder: Recording...
+       5.470 s [20] rosbag2_recorder: Subscribed to topic '/robot1/cmd_vel'
+       5.475 s [20] rosbag2_recorder: Subscribed to topic '/robot1/path_test/reference_pose'
+       5.479 s [20] rosbag2_recorder: Subscribed to topic '/robot1/path_test/tracking_error'
+       5.480 s [20] rosbag2_recorder: All requested topics are subscribed. Stopping discovery...
+       5.503 s [20] path_follower_node: Path follower ready: scenario=circle, cmd_topic=/robot1/cmd_vel, odom_topic=/robot1/odom, max_v=0.075, max_w=0.200
+       5.508 s [30] path_follower_node: Waiting for odometry before starting path test...
+       5.512 s [20] path_follower_node: Test initialized at odom pose: x=0.000, y=0.000, yaw=0.000 rad
+       5.557 s [20] path_follower_node: t=0.0s ref=(0.00,-0.00,-0.00) err_body=(0.002,-0.000,-0.003) cmd=(0.052,-0.089)
+       6.606 s [20] path_follower_node: t=1.1s ref=(0.05,-0.00,-0.09) err_body=(0.031,-0.004,0.097) cmd=(0.075,0.091)
+       7.656 s [20] path_follower_node: t=2.1s ref=(0.11,-0.01,-0.18) err_body=(-0.009,0.001,0.030) cmd=(0.043,-0.029)
+       8.653 s [20] path_follower_node: t=3.1s ref=(0.16,-0.02,-0.26) err_body=(-0.014,-0.002,-0.023) cmd=(0.039,-0.124)
+       9.656 s [20] path_follower_node: t=4.1s ref=(0.20,-0.04,-0.34) err_body=(-0.009,-0.010,0.045) cmd=(0.043,-0.002)
+      10.706 s [20] path_follower_node: t=5.2s ref=(0.25,-0.06,-0.43) err_body=(-0.012,-0.011,0.052) cmd=(0.041,0.010)
+      11.756 s [20] path_follower_node: t=6.2s ref=(0.30,-0.08,-0.52) err_body=(-0.015,-0.012,0.002) cmd=(0.038,-0.080)
+      12.754 s [20] path_follower_node: t=7.2s ref=(0.34,-0.11,-0.60) err_body=(-0.013,-0.017,-0.006) cmd=(0.040,-0.096)
+      13.756 s [20] path_follower_node: t=8.2s ref=(0.38,-0.14,-0.69) err_body=(-0.006,-0.024,0.036) cmd=(0.045,-0.021)
+      14.805 s [20] path_follower_node: t=9.3s ref=(0.42,-0.17,-0.77) err_body=(-0.009,-0.026,0.056) cmd=(0.043,0.016)
+      15.856 s [20] path_follower_node: t=10.3s ref=(0.46,-0.21,-0.86) err_body=(-0.014,-0.027,0.004) cmd=(0.039,-0.078)
+      16.856 s [20] path_follower_node: t=11.3s ref=(0.49,-0.25,-0.94) err_body=(-0.010,-0.032,-0.002) cmd=(0.042,-0.089)
+      17.906 s [20] path_follower_node: t=12.4s ref=(0.52,-0.29,-1.03) err_body=(-0.006,-0.039,0.058) cmd=(0.045,0.018)
+      18.905 s [20] path_follower_node: t=13.4s ref=(0.54,-0.34,-1.12) err_body=(-0.008,-0.039,0.054) cmd=(0.044,0.011)
+      19.907 s [20] path_follower_node: t=14.4s ref=(0.56,-0.38,-1.20) err_body=(-0.012,-0.040,0.003) cmd=(0.040,-0.081)
+      20.909 s [20] path_follower_node: t=15.4s ref=(0.58,-0.43,-1.28) err_body=(-0.007,-0.044,-0.026) cmd=(0.045,-0.134)
+      21.955 s [20] path_follower_node: t=16.4s ref=(0.59,-0.48,-1.37) err_body=(-0.004,-0.054,0.069) cmd=(0.047,0.038)
+      23.006 s [20] path_follower_node: t=17.5s ref=(0.60,-0.53,-1.46) err_body=(-0.007,-0.053,0.064) cmd=(0.044,0.029)
+      24.055 s [20] path_follower_node: t=18.5s ref=(0.60,-0.58,-1.54) err_body=(-0.012,-0.052,-0.022) cmd=(0.041,-0.126)
+      25.055 s [20] path_follower_node: t=19.5s ref=(0.60,-0.63,-1.63) err_body=(-0.005,-0.059,-0.001) cmd=(0.046,-0.090)
+      26.054 s [20] path_follower_node: t=20.5s ref=(0.59,-0.68,-1.71) err_body=(-0.002,-0.067,0.092) cmd=(0.048,0.078)
+      27.056 s [20] path_follower_node: t=21.5s ref=(0.58,-0.73,-1.79) err_body=(-0.009,-0.064,0.045) cmd=(0.043,-0.007)
+      28.055 s [20] path_follower_node: t=22.5s ref=(0.57,-0.78,-1.88) err_body=(-0.010,-0.067,-0.044) cmd=(0.042,-0.167)
+      29.107 s [20] path_follower_node: t=23.6s ref=(0.55,-0.83,-1.97) err_body=(-0.001,-0.078,0.029) cmd=(0.049,-0.037)
+      30.155 s [20] path_follower_node: t=24.6s ref=(0.53,-0.88,-2.05) err_body=(-0.003,-0.081,0.094) cmd=(0.048,0.079)
+      31.155 s [20] path_follower_node: t=25.6s ref=(0.51,-0.92,-2.14) err_body=(-0.009,-0.077,-0.015) cmd=(0.043,-0.116)
+      32.206 s [20] path_follower_node: t=26.7s ref=(0.48,-0.96,-2.22) err_body=(-0.003,-0.085,0.001) cmd=(0.048,-0.088)
+      33.254 s [20] path_follower_node: t=27.7s ref=(0.44,-1.00,-2.31) err_body=(-0.000,-0.089,0.091) cmd=(0.049,0.074)
+      34.255 s [20] path_follower_node: t=28.7s ref=(0.41,-1.04,-2.39) err_body=(-0.009,-0.087,0.014) cmd=(0.042,-0.065)
+      35.256 s [20] path_follower_node: t=29.7s ref=(0.37,-1.07,-2.48) err_body=(-0.006,-0.091,-0.002) cmd=(0.045,-0.094)
+      36.306 s [20] path_follower_node: t=30.8s ref=(0.33,-1.10,-2.57) err_body=(-0.000,-0.097,0.039) cmd=(0.050,-0.021)
+      37.354 s [20] path_follower_node: t=31.8s ref=(0.28,-1.13,-2.65) err_body=(-0.005,-0.099,0.039) cmd=(0.046,-0.020)
+      38.354 s [20] path_follower_node: t=32.8s ref=(0.24,-1.15,-2.74) err_body=(-0.006,-0.102,0.013) cmd=(0.046,-0.068)
+      39.356 s [20] path_follower_node: t=33.8s ref=(0.19,-1.17,-2.82) err_body=(-0.003,-0.105,0.024) cmd=(0.048,-0.049)
+      40.355 s [20] path_follower_node: t=34.8s ref=(0.14,-1.18,-2.90) err_body=(-0.003,-0.108,0.028) cmd=(0.047,-0.041)
+      41.407 s [20] path_follower_node: t=35.9s ref=(0.09,-1.19,-2.99) err_body=(-0.002,-0.112,0.025) cmd=(0.049,-0.047)
+      42.455 s [20] path_follower_node: t=36.9s ref=(0.04,-1.20,-3.08) err_body=(0.001,-0.117,0.050) cmd=(0.051,-0.002)
+      43.506 s [20] path_follower_node: t=38.0s ref=(-0.01,-1.20,3.12) err_body=(-0.006,-0.118,0.026) cmd=(0.045,-0.046)
+      44.506 s [20] path_follower_node: t=39.0s ref=(-0.06,-1.20,3.03) err_body=(-0.005,-0.120,-0.001) cmd=(0.046,-0.093)
+      45.508 s [20] path_follower_node: t=40.0s ref=(-0.11,-1.19,2.95) err_body=(0.005,-0.125,0.046) cmd=(0.054,-0.011)
+      46.553 s [20] path_follower_node: t=41.0s ref=(-0.16,-1.18,2.86) err_body=(-0.003,-0.123,0.055) cmd=(0.048,0.006)
+      47.557 s [20] path_follower_node: t=42.0s ref=(-0.21,-1.16,2.78) err_body=(-0.011,-0.123,-0.021) cmd=(0.041,-0.130)
+      48.606 s [20] path_follower_node: t=43.1s ref=(-0.26,-1.14,2.69) err_body=(0.002,-0.130,0.019) cmd=(0.052,-0.058)
+      49.655 s [20] path_follower_node: t=44.1s ref=(-0.31,-1.12,2.60) err_body=(0.006,-0.133,0.089) cmd=(0.055,0.067)
+      50.654 s [20] path_follower_node: t=45.1s ref=(-0.35,-1.09,2.52) err_body=(-0.011,-0.131,-0.001) cmd=(0.042,-0.095)
+      51.656 s [20] path_follower_node: t=46.1s ref=(-0.39,-1.06,2.44) err_body=(-0.004,-0.137,-0.008) cmd=(0.047,-0.108)
+      52.706 s [20] path_follower_node: t=47.2s ref=(-0.43,-1.02,2.35) err_body=(0.013,-0.143,0.094) cmd=(0.060,0.075)
+      53.755 s [20] path_follower_node: t=48.2s ref=(-0.46,-0.98,2.26) err_body=(-0.005,-0.141,0.040) cmd=(0.046,-0.023)
+      54.755 s [20] path_follower_node: t=49.2s ref=(-0.49,-0.94,2.18) err_body=(-0.009,-0.143,-0.020) cmd=(0.043,-0.131)
+      55.757 s [20] path_follower_node: t=50.2s ref=(-0.52,-0.90,2.10) err_body=(0.005,-0.151,0.030) cmd=(0.054,-0.041)
+      56.806 s [20] path_follower_node: t=51.3s ref=(-0.54,-0.85,2.01) err_body=(0.008,-0.154,0.074) cmd=(0.056,0.038)
+      57.854 s [20] path_follower_node: t=52.3s ref=(-0.56,-0.81,1.92) err_body=(-0.008,-0.152,0.015) cmd=(0.044,-0.067)
+      58.905 s [20] path_follower_node: t=53.4s ref=(-0.58,-0.76,1.83) err_body=(-0.004,-0.157,-0.006) cmd=(0.047,-0.107)
+      59.956 s [20] path_follower_node: t=54.4s ref=(-0.59,-0.70,1.75) err_body=(0.012,-0.164,0.061) cmd=(0.059,0.013)
+      61.008 s [20] path_follower_node: t=55.5s ref=(-0.60,-0.65,1.66) err_body=(0.001,-0.163,0.057) cmd=(0.051,0.007)
+      62.008 s [20] path_follower_node: t=56.5s ref=(-0.60,-0.60,1.58) err_body=(-0.009,-0.162,-0.007) cmd=(0.043,-0.108)
+      63.006 s [20] path_follower_node: t=57.5s ref=(-0.60,-0.55,1.49) err_body=(0.004,-0.167,0.010) cmd=(0.053,-0.077)
+      64.056 s [20] path_follower_node: t=58.5s ref=(-0.59,-0.50,1.40) err_body=(0.013,-0.172,0.093) cmd=(0.060,0.070)
+      65.106 s [20] path_follower_node: t=59.6s ref=(-0.58,-0.45,1.32) err_body=(-0.009,-0.168,0.007) cmd=(0.043,-0.083)
+      66.154 s [20] path_follower_node: t=60.6s ref=(-0.57,-0.40,1.23) err_body=(-0.001,-0.174,-0.006) cmd=(0.049,-0.107)
+      67.206 s [20] path_follower_node: t=61.7s ref=(-0.55,-0.35,1.14) err_body=(0.019,-0.179,0.095) cmd=(0.065,0.074)
+      68.206 s [20] path_follower_node: t=62.7s ref=(-0.52,-0.31,1.06) err_body=(-0.009,-0.174,0.010) cmd=(0.043,-0.078)
+      69.207 s [20] path_follower_node: t=63.7s ref=(-0.50,-0.26,0.98) err_body=(-0.003,-0.179,-0.015) cmd=(0.048,-0.124)
+      70.253 s [20] path_follower_node: t=64.7s ref=(-0.47,-0.22,0.89) err_body=(0.022,-0.184,0.098) cmd=(0.067,0.078)
+      71.254 s [20] path_follower_node: t=65.7s ref=(-0.43,-0.18,0.80) err_body=(-0.003,-0.180,0.032) cmd=(0.047,-0.039)
+      72.306 s [20] path_follower_node: t=66.8s ref=(-0.39,-0.15,0.72) err_body=(-0.008,-0.182,-0.037) cmd=(0.044,-0.163)
+      73.355 s [20] path_follower_node: t=67.8s ref=(-0.35,-0.12,0.63) err_body=(0.021,-0.191,0.087) cmd=(0.067,0.059)
+      74.407 s [20] path_follower_node: t=68.9s ref=(-0.31,-0.09,0.54) err_body=(0.003,-0.188,0.051) cmd=(0.052,-0.005)
+      75.456 s [20] path_follower_node: t=69.9s ref=(-0.26,-0.06,0.45) err_body=(-0.011,-0.188,-0.026) cmd=(0.041,-0.145)
+      76.506 s [20] path_follower_node: t=71.0s ref=(-0.22,-0.04,0.37) err_body=(0.015,-0.195,0.052) cmd=(0.062,-0.004)
+      77.507 s [20] path_follower_node: t=72.0s ref=(-0.17,-0.02,0.28) err_body=(0.011,-0.196,0.072) cmd=(0.059,0.032)
+      78.554 s [20] path_follower_node: t=73.0s ref=(-0.12,-0.01,0.20) err_body=(-0.008,-0.194,0.011) cmd=(0.044,-0.078)
+      79.556 s [20] path_follower_node: t=74.0s ref=(-0.07,-0.00,0.11) err_body=(0.001,-0.197,-0.003) cmd=(0.050,-0.103)
+      80.556 s [20] path_follower_node: t=75.0s ref=(-0.02,-0.00,0.03) err_body=(0.015,-0.204,0.059) cmd=(0.062,0.007)
+      81.607 s [20] path_follower_node: t=76.1s ref=(-0.00,0.00,0.00) err_body=(-0.015,-0.205,0.105) cmd=(0.000,0.188)
+      82.653 s [20] path_follower_node: t=77.1s ref=(-0.00,0.00,0.00) err_body=(-0.025,-0.202,0.069) cmd=(0.000,0.125)
+      83.655 s [20] path_follower_node: t=78.1s ref=(-0.00,0.00,0.00) err_body=(-0.056,-0.191,-0.055) cmd=(0.000,-0.098)
+      84.706 s [20] path_follower_node: t=79.2s ref=(-0.00,0.00,0.00) err_body=(-0.056,-0.191,-0.055) cmd=(0.000,-0.098)
+      85.707 s [20] path_follower_node: t=80.2s ref=(-0.00,0.00,0.00) err_body=(-0.056,-0.191,-0.055) cmd=(0.000,-0.098)
+      86.755 s [20] path_follower_node: t=81.2s ref=(-0.00,0.00,0.00) err_body=(-0.052,-0.194,-0.030) cmd=(0.000,-0.054)
+      87.806 s [20] path_follower_node: t=82.3s ref=(-0.00,0.00,0.00) err_body=(-0.051,-0.195,-0.019) cmd=(0.000,-0.034)
+      88.806 s [20] path_follower_node: t=83.3s ref=(-0.00,0.00,0.00) err_body=(-0.049,-0.196,-0.009) cmd=(0.000,-0.017)
+      89.855 s [20] path_follower_node: t=84.3s ref=(-0.00,0.00,0.00) err_body=(-0.049,-0.196,-0.009) cmd=(0.000,-0.017)
+      90.906 s [20] path_follower_node: t=85.4s ref=(-0.00,0.00,0.00) err_body=(-0.047,-0.197,0.004) cmd=(0.000,0.007)
+      91.907 s [20] path_follower_node: t=86.4s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+      92.906 s [20] path_follower_node: t=87.4s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+      93.956 s [20] path_follower_node: t=88.4s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+      94.954 s [20] path_follower_node: t=89.4s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+      95.954 s [20] path_follower_node: t=90.4s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+      96.956 s [20] path_follower_node: t=91.4s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+      98.007 s [20] path_follower_node: t=92.5s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+      99.054 s [20] path_follower_node: t=93.5s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+     100.054 s [20] path_follower_node: t=94.5s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+     101.107 s [20] path_follower_node: t=95.6s ref=(-0.00,0.00,0.00) err_body=(-0.046,-0.197,0.008) cmd=(0.000,0.015)
+
+Diagnostic messages:
+       0.299 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       1.300 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       2.299 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       3.331 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       4.331 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       5.365 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       6.368 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       7.368 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       8.368 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       9.403 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      10.436 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      11.468 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      12.468 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      13.503 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      14.503 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      15.502 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      16.536 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      17.567 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      18.568 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      19.568 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      20.602 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      21.636 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      22.636 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      23.636 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      24.668 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      25.669 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      26.703 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      27.703 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      28.736 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      29.735 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      30.736 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      31.735 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      32.767 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      33.769 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      34.768 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      35.803 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      36.803 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      37.836 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      38.835 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      39.869 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      40.903 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      41.903 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      42.936 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      43.968 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      45.003 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      46.002 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      47.035 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      48.036 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      49.035 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      50.068 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      51.104 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      52.136 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      53.136 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      54.136 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      55.168 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      56.169 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      57.202 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      58.203 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      59.236 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      60.268 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      61.302 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      62.303 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      63.336 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      64.369 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      65.402 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      66.402 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      67.403 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      68.404 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      69.436 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      70.436 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      71.468 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      72.468 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      73.503 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      74.502 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      75.503 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      76.536 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      77.568 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      78.568 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      79.603 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      80.603 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      81.635 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      82.636 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      83.636 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      84.668 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      85.668 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      86.702 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      87.735 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      88.768 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      89.803 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      90.803 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      91.836 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      92.868 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      93.869 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      94.868 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      95.903 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      96.935 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      97.968 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      98.969 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+     100.003 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+     101.037 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
