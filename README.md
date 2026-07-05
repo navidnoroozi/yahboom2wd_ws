@@ -196,7 +196,8 @@ sinusoidal
 - The first pure-rotation test reached nearly 90 degrees but did not stop automatically. The reason was that the generic full-pose finish condition required small x/y error as well as small yaw error.
 - The `pure_rotation` logic was fixed so that it uses yaw-only completion, commands `linear.x = 0.0`, and ignores small x/y odometry drift for stopping.
 - The refined pure-rotation settings `angular_speed = 0.12`, `max_angular_speed = 0.25`, and `goal_tolerance_yaw = 0.025` produced a slower and more accurate approximately 90-degree turn.
-- The next planned validation is the **constant arc** test, because it is the first test combining forward motion and yaw motion under odometry feedback.
+- The left **constant arc** test was run after `straight` and `pure_rotation`. It turned left, stopped automatically, reached approximately 90 degrees, and ended close to the expected quarter-circle endpoint. The observed endpoint was within roughly 10 cm and the trajectory shape was smooth, so the left arc test is considered passed for commissioning.
+- The next planned validation is the **right constant arc** test, because it checks whether the same constant-curvature behavior is symmetric for right turns before moving to the full `circle` test.
 
 ## Role of `ROS_DOMAIN_ID`
 
@@ -510,8 +511,9 @@ The Yahboom bridge must already be running in Terminal 1 before starting a feedb
 |---:|---|---|---|---|---|
 | 1 | `straight` | Validate odometry-feedback tracking of a 1.0 m forward reference | After adding `odom_linear_scale = 1.5`, the robot traveled approximately 1.0 m physically for a 1.0 m reference | Passed | Keep as baseline calibration test |
 | 2 | `pure_rotation` | Validate yaw sign, angular command behavior, and automatic stopping | After fixing yaw-only stopping and using slower settings, the robot turned approximately 90 degrees and stopped automatically | Passed | Keep as angular baseline test |
-| 3 | `arc` | Validate simultaneous `linear.x` and `angular.z` under feedback | Not tested yet | Next | Run quarter-circle constant arc test |
-| 4 | `circle` | Validate sustained constant-curvature tracking | Not tested yet | Pending | Run only after `arc` behaves correctly |
+| 3a | `arc` left | Validate simultaneous `linear.x` and `angular.z` for a left quarter circle | Endpoint stayed within roughly 10 cm of the expected `(x, y) = (1.0, 1.0)` m target and the trajectory was smooth | Passed | Keep as left constant-curvature baseline |
+| 3b | `arc` right | Check left/right symmetry for the same constant-curvature reference | Not tested yet | Next | Run right quarter-circle constant arc test |
+| 4 | `circle` | Validate sustained constant-curvature tracking | Not tested yet | Pending | Run only after left and right arc tests behave correctly |
 | 5 | `stop_and_go` | Validate repeated starts/stops and transient behavior | Not tested yet | Pending | Run after constant-curvature tests |
 | 6 | `sinusoidal` | Validate smooth left-right changing curvature | Not tested yet | Pending | Run last, after straight/rotation/arc/circle are stable |
 
@@ -587,27 +589,43 @@ Development note: the `pure_rotation` scenario must stop based on yaw error only
 
 ### Constant arc test
 
-Use this to validate simultaneous forward and angular velocity commands. This is the next test after `straight` and `pure_rotation`.
+Use this to validate simultaneous forward and angular velocity commands. This is the first combined-motion test after `straight` and `pure_rotation`.
 
-Start conservatively with a left quarter-circle of radius 1 m:
+The left quarter-circle test has passed with the following conservative settings. The endpoint stayed within roughly 10 cm of the expected `(x, y) = (1.0, 1.0)` m target and the odometry trajectory was smooth:
 
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
   scenario:=arc \
-  linear_speed:=0.06 \
+  linear_speed:=0.05 \
   radius:=1.0 \
   arc_angle:=1.5708 \
   turn_direction:=left \
-  max_linear_speed:=0.09 \
-  max_angular_speed:=0.25 \
-  goal_tolerance_xy:=0.04 \
-  goal_tolerance_yaw:=0.04
+  max_linear_speed:=0.075 \
+  max_angular_speed:=0.20 \
+  goal_tolerance_xy:=0.08 \
+  goal_tolerance_yaw:=0.05
 ```
 
-Expected nominal motion: a quarter-circle arc with radius 1 m. The final pose should be approximately 1 m forward, 1 m lateral to the left, and 90 degrees left relative to the start pose, in the local test frame.
+Expected nominal motion for the left test: a quarter-circle arc with radius 1 m. The final pose should be approximately 1 m forward, 1 m lateral to the left, and 90 degrees left relative to the start pose, in the local test frame.
 
-After the left arc behaves correctly, repeat with `turn_direction:=right` to check left/right symmetry.
+The next test is the symmetric right quarter-circle. Use the same values and change only `turn_direction`:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=arc \
+  linear_speed:=0.05 \
+  radius:=1.0 \
+  arc_angle:=1.5708 \
+  turn_direction:=right \
+  max_linear_speed:=0.075 \
+  max_angular_speed:=0.20 \
+  goal_tolerance_xy:=0.08 \
+  goal_tolerance_yaw:=0.05
+```
+
+Expected nominal motion for the right test: a quarter-circle arc with radius 1 m, approximately 1 m forward, 1 m lateral to the right, and 90 degrees right relative to the start pose. Passing both left and right arcs gives confidence that the robot can handle constant-curvature commands symmetrically before running the full `circle` test.
 
 ### Circle test
 
@@ -774,11 +792,11 @@ robot1_feedback_stopgo_YYYYMMDD_HHMMSS
 robot1_feedback_sinusoidal_YYYYMMDD_HHMMSS
 ```
 
-For the next constant arc test, use for example:
+For the next right constant arc test, use for example:
 
 ```bash
 ros2 bag record -s mcap \
-  -o ~/yahboom2wd_ws/bags/robot1_feedback_arc_$(date +%Y%m%d_%H%M%S) \
+  -o ~/yahboom2wd_ws/bags/robot1_feedback_arc_right_$(date +%Y%m%d_%H%M%S) \
   /robot1/cmd_vel \
   /robot1/odom \
   /robot1/imu/data \
@@ -892,7 +910,7 @@ Use a shared `ROS_DOMAIN_ID`, ensure all machines are on the same LAN, and use c
 10. Adjust `linear_cmd_scale`, `angular_cmd_scale`, `odom_linear_scale`, motor signs, or `wheel_separation` only after recording evidence.
 11. Add and build `yahboom_2wd_tests` under `~/yahboom2wd_ws/src`.
 12. Run the feedback `straight` scenario and record `/robot1/path_test/reference_pose` and `/robot1/path_test/tracking_error`.
-13. Run `pure_rotation`, then `arc`, then `circle`, then `stop_and_go`, then `sinusoidal`.
+13. Run `pure_rotation`, then left/right `arc`, then `circle`, then `stop_and_go`, then `sinusoidal`.
 14. Compare reference trajectory, odometry trajectory, lateral error, heading error, encoder ticks, and IMU yaw rate for each test.
 15. Repeat the validated checklist for all four robots.
 16. Move to distributed MPC only after the single-robot feedback tests are repeatable and safe.
@@ -960,23 +978,38 @@ The right-turn version should use the same values with:
 turn_direction = right
 ```
 
-### Next test to run
-
-Constant arc, left quarter circle:
+Left constant-arc feedback test:
 
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
   robot_namespace:=robot1 \
   scenario:=arc \
-  linear_speed:=0.06 \
+  linear_speed:=0.05 \
   radius:=1.0 \
   arc_angle:=1.5708 \
   turn_direction:=left \
-  max_linear_speed:=0.09 \
-  max_angular_speed:=0.25 \
-  goal_tolerance_xy:=0.04 \
-  goal_tolerance_yaw:=0.04
+  max_linear_speed:=0.075 \
+  max_angular_speed:=0.20 \
+  goal_tolerance_xy:=0.08 \
+  goal_tolerance_yaw:=0.05
 ```
 
-Proceed to `circle`, `stop_and_go`, and `sinusoidal` only after the constant arc test is understood from bag data.
+### Next test to run
 
+Right constant arc, quarter circle:
+
+```bash
+ros2 launch yahboom_2wd_tests path_follower.launch.py \
+  robot_namespace:=robot1 \
+  scenario:=arc \
+  linear_speed:=0.05 \
+  radius:=1.0 \
+  arc_angle:=1.5708 \
+  turn_direction:=right \
+  max_linear_speed:=0.075 \
+  max_angular_speed:=0.20 \
+  goal_tolerance_xy:=0.08 \
+  goal_tolerance_yaw:=0.05
+```
+
+Proceed to `circle`, `stop_and_go`, and `sinusoidal` only after both left and right constant arc tests are understood from bag data.
