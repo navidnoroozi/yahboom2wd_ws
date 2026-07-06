@@ -893,8 +893,6 @@ LATEST_BAG=$(find ~/yahboom2wd_ws/bags \
   | head -1 \
   | cut -d' ' -f2-)
 
-echo "$LATEST_BAG"
-
 python3 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py \
   --bag "$LATEST_BAG" \
   --namespace robot1
@@ -1178,3 +1176,119 @@ robot2 -> /robot2/cmd_vel, /robot2/odom
 ```
 
 Only after the two-robot distributed MPC pipeline is stable should the project scale to `robot3` and `robot4`.
+
+
+## Two-robot distributed MPC development stage
+
+The single-robot commissioning suite has now been completed for `robot1`, and `robot2` has also been assembled, calibrated, and validated with the same standard tests. The next development stage is therefore a **two-robot distributed MPC experiment** with:
+
+```text
+robot1 -> /robot1/odom, /robot1/cmd_vel
+robot2 -> /robot2/odom, /robot2/cmd_vel
+```
+
+The final research target remains a four-robot distributed MPC setup, but the correct intermediate milestone is a two-robot hardware test. This reduces hardware risk and makes network, timing, odometry-frame, and command-conversion issues easier to isolate before purchasing and commissioning `robot3` and `robot4`.
+
+### Development strategy
+
+Use the following staged plan:
+
+| Stage | Hardware | Goal | Status |
+|---:|---|---|---|
+| 1 | `robot1` only | Calibrate Yahboom ROS 2 interface and pass all standard single-robot path tests | Complete |
+| 2 | `robot2` only | Assemble, calibrate, and validate the second Yahboom 2WD robot with the same test suite | Complete |
+| 3 | `robot1` + `robot2` | Run the distributed MPC stack in a two-robot star topology | Next |
+| 4 | `robot1` + `robot2` + simulated agents | Optionally test mixed hardware/SIL scaling behavior | Optional |
+| 5 | `robot1` ... `robot4` | Order and commission two more robots only after the two-robot hardware stack is stable | Future |
+
+### Two-robot star topology
+
+The first hardware distributed MPC test should use a star topology:
+
+```text
+robot1 Raspberry Pi  <---- ZeroMQ ----\
+                                       \
+                                        Ubuntu VM coordinator
+                                       /
+robot2 Raspberry Pi  <---- ZeroMQ ----/
+```
+
+The robots do not communicate directly with each other. Each robot runs its local MPC/safety controller node. The Ubuntu VM coordinator gathers the current robot states from ROS 2 odometry, requests local MPC solutions over ZeroMQ, applies the safety layer, and publishes velocity commands back to the robot namespaces.
+
+### ROS 2 / ZeroMQ interface package
+
+Use the package:
+
+```text
+yahboom_2wd_dmpc
+```
+
+This package connects the already-validated Yahboom ROS 2 interface to the existing distributed MPC app.
+
+Robot-side nodes:
+
+```text
+robot1: dmpc_controller_node --agent-id 1  -> ZMQ REP port 5601
+robot2: dmpc_controller_node --agent-id 2  -> ZMQ REP port 5602
+```
+
+VM-side node:
+
+```text
+dmpc_coordinator_ros_node
+```
+
+The VM node subscribes to:
+
+```text
+/robot1/odom
+/robot2/odom
+```
+
+and publishes:
+
+```text
+/robot1/cmd_vel
+/robot2/cmd_vel
+```
+
+It also publishes debug world-frame commands:
+
+```text
+/dmpc/robot1/u_world
+/dmpc/robot2/u_world
+```
+
+### First two-robot MPC test policy
+
+Start with conservative real-robot parameters:
+
+```text
+model              = single_integrator
+n_agents           = 2
+graph              = complete
+M_manual           = 5
+u_bound            = 0.08
+d_safe             = 0.65 m
+formation_margin   = 0.15 m
+max_linear_speed   = 0.07 m/s
+max_angular_speed  = 0.35 rad/s
+obstacles_enabled  = false
+```
+
+Start with `obstacles_enabled = false` to validate the communication, formation behavior, state feedback, and velocity-command conversion. Enable obstacle avoidance only after the basic two-robot formation run is repeatable and safe.
+
+### Deployment order for the two-robot DMPC test
+
+1. Start the calibrated Yahboom bridge on `robot1`.
+2. Start the calibrated Yahboom bridge on `robot2`.
+3. Start the local `dmpc_controller_node` on `robot1` with `agent_id:=1`.
+4. Start the local `dmpc_controller_node` on `robot2` with `agent_id:=2`.
+5. Start the Ubuntu VM coordinator with `enable_motion:=false`.
+6. Confirm that the VM sees `/robot1/odom` and `/robot2/odom`.
+7. Confirm that the VM can communicate with both ZMQ controller endpoints.
+8. Inspect `/dmpc/robot1/u_world` and `/dmpc/robot2/u_world`.
+9. Switch to `enable_motion:=true` only in a clear test area.
+10. Record a bag containing both robots' odometry, commands, and DMPC debug topics.
+
+Do not move to four physical robots until the two-robot stack runs repeatably and safely.

@@ -1,0 +1,45 @@
+dmpc_coordinator_ros_node:
+  ros__parameters:
+    # Replace these with the actual Raspberry Pi IP addresses.
+    # The controller node on robot1 should bind to port 5601.
+    # The controller node on robot2 should bind to port 5602.
+    robot_namespaces: ["robot1", "robot2"]
+    agent_ids: [1, 2]
+    controller_endpoints:
+      - "tcp://192.168.178.51:5601"
+      - "tcp://192.168.178.52:5602"
+
+    rate_hz: 5.0
+    enable_motion: false       # set true only after odom/controller communication is verified
+    odom_timeout_s: 1.0
+
+    model: "single_integrator"
+    graph: "complete"
+    objective_mode: "safe_formation"
+    auto_M: false
+    M_manual: 5
+
+    # Conservative real-robot DMPC bounds.
+    u_bound: 0.08
+    r_bound: 5.0
+    dt: 0.20
+
+    d_safe: 0.65
+    formation_margin: 0.15
+    formation_rotation_rad: 0.0
+
+    safety_enabled: true
+    obstacles_enabled: false
+
+    w_track: 8.0
+    w_du: 3.0
+    w_u: 0.3
+
+    # World-vector to differential-drive conversion.
+    max_linear_speed: 0.07
+    max_angular_speed: 0.35
+    world_command_to_speed_scale: 1.0
+    heading_gain: 1.8
+    linear_deadband: 0.005
+    stop_for_heading_error_rad: 1.20
+    allow_reverse: false
