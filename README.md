@@ -202,7 +202,9 @@ sinusoidal
 - The repeated y-axis offset in the circle tests is most likely accumulated cross-track/yaw/curvature error over a long maneuver, not a reason to split global x/y odometry scaling. Keep `odom_linear_scale = 1.5` for now because it was calibrated by the straight test.
 - The first stop-and-go run revealed a software issue in `ref_stop_and_go()`: after the third motion segment, the reference jumped from about `0.54 m` to about `0.72 m`, which added one unintended extra move segment. The reference generator was fixed so that the completed cycles are clamped at the configured number of cycles.
 - After fixing `ref_stop_and_go()`, the repeated stop-and-go test produced a final odometry displacement of about `0.57 m`, with `dy` close to zero, smooth straight motion, and two visible intermediate stop phases. The stop-and-go test is therefore considered passed for commissioning.
-- The next planned validation is the **sinusoidal** path test, because it checks smooth left-right changing curvature before moving toward MPC-style time-varying velocity commands.
+- The **sinusoidal** path test was run after the straight, pure-rotation, arc, circle, and stop-and-go tests. The robot traveled approximately 2 m, followed a smooth low-amplitude S-shaped path with small fluctuations around the reference, and stopped automatically. The final odometry was about `dx = 2.03 m`, `dy = -0.02 m`, so the sinusoidal test is considered passed for commissioning.
+- With the sinusoidal test passed, the standard single-robot feedback validation suite for `robot1` is complete. The next hardware step is to assemble `robot2`, repeat the same calibration and standard tests for `robot2`, and identify its own calibration values before running any multi-robot MPC experiment.
+- The distributed MPC development strategy is staged: first validate the complete software/ROS/network/MPC pipeline with two robots (`robot1` and `robot2`), then order and commission `robot3` and `robot4` only after the two-robot distributed MPC test is stable. This reduces cost and risk before scaling to the intended four-robot setup.
 
 ## Role of `ROS_DOMAIN_ID`
 
@@ -521,7 +523,10 @@ The Yahboom bridge must already be running in Terminal 1 before starting a feedb
 | 4a | `circle` left | Validate sustained left constant-curvature tracking | Smooth full-circle trajectory; final displacement roughly within 15-20 cm, mainly y-axis offset | Passed with observation | Keep as sustained left-turn baseline |
 | 4b | `circle` right | Validate sustained right constant-curvature tracking | Similar to the left circle, with opposite rotation direction and about 20 cm y-axis offset | Passed with observation | Keep as sustained right-turn baseline |
 | 5 | `stop_and_go` | Validate repeated starts/stops and transient behavior | After fixing `ref_stop_and_go()`, the robot moved smoothly straight, stopped twice between the three move phases, and ended around `0.57 m` for a `0.54 m` reference | Passed | Keep as transient-response baseline |
-| 6 | `sinusoidal` | Validate smooth left-right changing curvature | Not tested yet | Next | Run conservative low-amplitude sinusoidal test |
+| 6 | `sinusoidal` | Validate smooth left-right changing curvature | Robot traveled approximately 2 m in a smooth low-amplitude sinusoidal shape, with small fluctuations around the reference, final `dx ≈ 2.03 m`, `dy ≈ -0.02 m`, and automatic stopping | Passed | Single-robot suite for `robot1` complete |
+| 7 | `robot2` calibration and validation | Repeat calibration and the same standard test suite on the second Yahboom 2WD robot | Robot not assembled yet | Next | Assemble `robot2`, then calibrate and test it independently |
+| 8 | two-robot distributed MPC dry run | Validate namespaces, networking, time alignment, command publishing, and two-robot MPC behavior | Not started | Planned | Start after `robot2` passes the single-robot suite |
+| 9 | four-robot distributed MPC setup | Scale the final planner to four robots | Not started | Future | Order and commission `robot3` and `robot4` after the two-robot setup is stable |
 
 The progress table should be updated after every bagged experiment. Keep the terminal command, bag folder name, physical observation, and plotted result together so that calibration decisions are traceable.
 
@@ -698,7 +703,7 @@ After the fix, the stop-and-go test is considered passed for commissioning. The 
 
 Use this to test smooth changing-curvature commands. Run it after `straight`, `pure_rotation`, left/right `arc`, left/right `circle`, and `stop_and_go` behave correctly.
 
-Start with a low-amplitude, conservative sinusoidal path:
+The validated commissioning command for `robot1` is:
 
 ```bash
 ros2 launch yahboom_2wd_tests path_follower.launch.py \
@@ -724,7 +729,7 @@ y(x) = amplitude * sin(2*pi*x / wavelength)
 
 Therefore, for `path_length = 2.0 m` and `wavelength = 2.0 m`, the path completes one sinusoidal wavelength and ends near `y = 0`. The initial and final path tangent are not exactly zero, so a small initial heading correction and a nonzero final heading reference are expected.
 
-The test passes if the robot follows a smooth S-shaped trajectory, alternates curvature without oscillatory instability, remains close to the reference path, and stops automatically near the end of the reference.
+The `robot1` sinusoidal test is considered passed for commissioning. The robot traveled about 2 m in a smooth S-shaped trajectory, showed no unstable oscillation, and stopped automatically near the end. The bag summary reported approximately `final dx = 2.03 m`, `final dy = -0.02 m`, and `path length = 2.12 m`.
 
 ### Safety notes for path-following tests
 
@@ -846,7 +851,7 @@ robot1_feedback_stopgo_YYYYMMDD_HHMMSS
 robot1_feedback_sinusoidal_YYYYMMDD_HHMMSS
 ```
 
-For the next sinusoidal test, use for example:
+For sinusoidal tests, use for example:
 
 ```bash
 ros2 bag record -s mcap \
@@ -887,6 +892,8 @@ LATEST_BAG=$(find ~/yahboom2wd_ws/bags \
   | sort -nr \
   | head -1 \
   | cut -d' ' -f2-)
+
+echo "$LATEST_BAG"
 
 python3 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py \
   --bag "$LATEST_BAG" \
@@ -930,7 +937,25 @@ encoder tick deltas of M2 and M4
 average odom speed
 ```
 
-## Four-robot convention for distributed MPC
+## Development roadmap after `robot1`
+
+The standard single-robot commissioning suite has now passed on `robot1`. The next development stage is not the distributed MPC immediately; it is the assembly, calibration, and validation of `robot2`.
+
+Recommended staged strategy:
+
+1. **Finish `robot1` baseline**: keep the current `robot1` calibration as the reference baseline.
+2. **Assemble `robot2`**: build the second Yahboom 2WD robot and verify the mechanical assembly, M2/M4 wiring, battery, serial link, IMU, and encoder readings.
+3. **Calibrate `robot2` independently**: do not assume that `robot2` will use exactly the same `linear_cmd_scale`, `angular_cmd_scale`, or `odom_linear_scale` as `robot1`. Start from the `robot1` values, but tune only from `robot2` bagged measurements.
+4. **Run the full standard single-robot suite on `robot2`**: open-loop straight, feedback straight, pure rotation, left/right arc, left/right circle, stop-and-go, and sinusoidal.
+5. **Freeze `robot1` and `robot2` baselines**: record each robot's final launch parameters and test evidence.
+6. **Run a two-robot distributed MPC dry run**: validate namespaces, networking, time alignment, collision-free references, per-robot command publishing, and bag recording using only `robot1` and `robot2`.
+7. **Order and commission `robot3` and `robot4` only after the two-robot distributed MPC setup is stable**: this de-risks the software and communication architecture before scaling to the intended four-robot experiment.
+
+This staged approach is the recommended development strategy. The default/ideal distributed MPC algorithm may target four robots, but a two-robot implementation is the correct intermediate validation step while only two physical Yahboom robots are available.
+
+## Two-robot staging and four-robot convention for distributed MPC
+
+
 
 Run the same bringup on each RPi4, changing only `namespace`, hostname, and optionally calibration values.
 
@@ -952,22 +977,35 @@ Use a shared `ROS_DOMAIN_ID`, ensure all machines are on the same LAN, and use c
 
 ## Recommended commissioning sequence
 
+### Per-robot commissioning sequence
+
+Use this sequence for each physical robot. `robot1` has completed this sequence; repeat it for `robot2` after assembly.
+
 1. Confirm `/dev/myserial` exists after plugging in MicroUSB.
 2. Set `ROS_DOMAIN_ID=42` in every terminal.
 3. Run `yahboom_serial_probe` and check firmware version, battery voltage, IMU values, and encoder ticks.
 4. Lift the robot and run `yahboom_motor_test` in low PWM mode to verify M2/M4 signs.
 5. Launch `command_mode:=motion`.
-6. Verify `/robot1/cmd_vel` has one subscriber using `ros2 topic info -v /robot1/cmd_vel`.
-7. Test `/robot1/cmd_vel` at `0.05 m/s`.
+6. Verify `/robotX/cmd_vel` has one subscriber using `ros2 topic info -v /robotX/cmd_vel`.
+7. Test `/robotX/cmd_vel` at `0.05 m/s`.
 8. Record a bag during a 10-second open-loop straight-line test.
 9. Plot the bag and compare physical distance, odometry, and encoder ticks.
 10. Adjust `linear_cmd_scale`, `angular_cmd_scale`, `odom_linear_scale`, motor signs, or `wheel_separation` only after recording evidence.
 11. Add and build `yahboom_2wd_tests` under `~/yahboom2wd_ws/src`.
-12. Run the feedback `straight` scenario and record `/robot1/path_test/reference_pose` and `/robot1/path_test/tracking_error`.
-13. Run `pure_rotation`, then left/right `arc`, then `circle`, then `stop_and_go`, then `sinusoidal`.
+12. Run the feedback `straight` scenario and record `/robotX/path_test/reference_pose` and `/robotX/path_test/tracking_error`.
+13. Run `pure_rotation`, then left/right `arc`, then left/right `circle`, then `stop_and_go`, then `sinusoidal`.
 14. Compare reference trajectory, odometry trajectory, lateral error, heading error, encoder ticks, and IMU yaw rate for each test.
-15. Repeat the validated checklist for all four robots.
-16. Move to distributed MPC only after the single-robot feedback tests are repeatable and safe.
+15. Store the final per-robot calibration values in this README.
+
+### Multi-robot development sequence
+
+1. Complete `robot1` commissioning. This is done.
+2. Assemble and complete `robot2` commissioning.
+3. Run a two-robot ROS communication test with `/robot1/*` and `/robot2/*` active at the same time.
+4. Run a two-robot open-loop command test where the two robots receive independent namespaced `cmd_vel` commands.
+5. Run a two-robot distributed MPC dry run using safe low-speed references and large separation distances.
+6. Only after the two-robot MPC setup is stable, order and commission `robot3` and `robot4`.
+7. Scale the same namespace, calibration, logging, and MPC structure to the final four-robot experiment.
 
 ## Current known calibration for `yahboom1`
 
@@ -983,7 +1021,25 @@ odom_linear_scale  = 1.5
 ROS_DOMAIN_ID      = 42
 ```
 
-The values above are the current baseline for `yahboom1`. Do not change them for the sinusoidal test unless a new bagged experiment clearly shows a repeatable error.
+The values above are the current baseline for `yahboom1`. Do not change them unless a new bagged experiment clearly shows a repeatable error.
+
+## Planned calibration record for `robot2`
+
+`robot2` is not assembled yet. After assembly, use the same fields as `robot1`, but fill them with `robot2`-specific values from its own calibration tests:
+
+```text
+wheel_radius       = TBD
+wheel_separation   = TBD
+left_motor_port    = M2
+right_motor_port   = M4
+command_mode       = motion
+linear_cmd_scale   = TBD
+angular_cmd_scale  = TBD
+odom_linear_scale  = TBD
+ROS_DOMAIN_ID      = 42
+```
+
+Start `robot2` from the `robot1` calibration values only as an initial guess. The final `robot2` values must be based on its own open-loop straight, feedback straight, pure-rotation, arc, circle, stop-and-go, and sinusoidal bags.
 
 ## Current recommended single-robot feedback test settings for `yahboom1`
 
@@ -1085,24 +1141,40 @@ ros2 launch yahboom_2wd_tests path_follower.launch.py \
 
 After fixing `ref_stop_and_go()`, this test passed with smooth straight motion, two intermediate stop phases, and final odometry close to the expected `0.54 m` reference distance.
 
-### Next test to run
+### Next step
 
-Sinusoidal feedback test:
+The standard single-robot suite has passed on `robot1`. The next step is to assemble and commission `robot2`.
 
-```bash
-ros2 launch yahboom_2wd_tests path_follower.launch.py \
-  robot_namespace:=robot1 \
-  scenario:=sinusoidal \
-  linear_speed:=0.05 \
-  amplitude:=0.10 \
-  wavelength:=2.0 \
-  path_length:=2.0 \
-  max_linear_speed:=0.075 \
-  max_angular_speed:=0.25 \
-  goal_tolerance_xy:=0.12 \
-  goal_tolerance_yaw:=0.10
+Use the same single-robot test order for `robot2`:
+
+```text
+1. serial probe and lifted motor test
+2. open-loop straight-line command calibration
+3. feedback straight test and odometry scale calibration
+4. pure rotation left/right
+5. arc left/right
+6. circle left/right
+7. stop-and-go
+8. sinusoidal
 ```
 
-Expected nominal behavior: the robot should move forward about `2 m` while performing a gentle left-right sinusoidal path. The lateral deviation should stay small, about `±0.10 m`, and the motion should look smooth rather than oscillatory or jerky. The robot should stop automatically near the end of the reference.
+For `robot2`, use namespace `robot2` consistently. Example bridge launch, initially using the `robot1` calibration as a starting point only:
 
-Proceed toward the distributed MPC planner only after the sinusoidal test is understood from bag data, because this is the first test with continuously changing curvature.
+```bash
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot2 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
+```
+
+After `robot2` is calibrated and its single-robot suite passes, start the two-robot distributed MPC stage with both robots running simultaneously:
+
+```text
+robot1 -> /robot1/cmd_vel, /robot1/odom
+robot2 -> /robot2/cmd_vel, /robot2/odom
+```
+
+Only after the two-robot distributed MPC pipeline is stable should the project scale to `robot3` and `robot4`.
