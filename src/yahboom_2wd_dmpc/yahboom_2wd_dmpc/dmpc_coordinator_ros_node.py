@@ -49,12 +49,25 @@ class DmpcCoordinatorRosNode(Node):
         # Topology / ROS interface
         self.declare_parameter("robot_namespaces", ["robot1", "robot2"])
         self.declare_parameter("agent_ids", [1, 2])
+        # Scalar endpoint parameters are used by the launch file.
+        # The legacy STRING_ARRAY parameter is kept for YAML/manual use.
         self.declare_parameter("robot1_controller_endpoint", "tcp://192.168.178.51:5601")
         self.declare_parameter("robot2_controller_endpoint", "tcp://192.168.178.52:5602")
         self.declare_parameter("controller_endpoints", ["tcp://192.168.178.51:5601", "tcp://192.168.178.52:5602"])
         self.declare_parameter("rate_hz", 5.0)
         self.declare_parameter("enable_motion", False)
         self.declare_parameter("odom_timeout_s", 1.0)
+
+        # Common world/map-frame initialization.  The Yahboom odometry of each
+        # robot starts from its own local zero pose.  These parameters define
+        # where that local zero pose is located in the shared world frame.
+        self.declare_parameter("world_frame", "map")
+        self.declare_parameter("robot1_initial_x", 0.0)
+        self.declare_parameter("robot1_initial_y", -0.45)
+        self.declare_parameter("robot1_initial_yaw", 0.0)
+        self.declare_parameter("robot2_initial_x", 0.0)
+        self.declare_parameter("robot2_initial_y", 0.45)
+        self.declare_parameter("robot2_initial_yaw", 0.0)
 
         # DMPC configuration used by coordinator-side neighbor logic and diagnostics.
         self.declare_parameter("model", "single_integrator")
@@ -85,6 +98,9 @@ class DmpcCoordinatorRosNode(Node):
 
         self.robot_namespaces = [str(x).strip("/") for x in self.get_parameter("robot_namespaces").value]
         self.agent_ids = [int(x) for x in self.get_parameter("agent_ids").value]
+        # Prefer scalar endpoint parameters to avoid ROS 2 Humble launch substitution
+        # issues with STRING_ARRAY parameters. If the scalar parameters are empty,
+        # fall back to the legacy controller_endpoints array.
         ep1 = str(self.get_parameter("robot1_controller_endpoint").value).strip()
         ep2 = str(self.get_parameter("robot2_controller_endpoint").value).strip()
         if ep1 and ep2:
@@ -94,6 +110,21 @@ class DmpcCoordinatorRosNode(Node):
         self.rate_hz = float(self.get_parameter("rate_hz").value)
         self.enable_motion = bool(self.get_parameter("enable_motion").value)
         self.odom_timeout_s = float(self.get_parameter("odom_timeout_s").value)
+        self.world_frame = str(self.get_parameter("world_frame").value).strip() or "map"
+
+        # Agent-id keyed initial pose of each robot's local odom frame in the shared world frame.
+        self.initial_world_pose_by_agent = {
+            1: np.array([
+                float(self.get_parameter("robot1_initial_x").value),
+                float(self.get_parameter("robot1_initial_y").value),
+                float(self.get_parameter("robot1_initial_yaw").value),
+            ], dtype=float),
+            2: np.array([
+                float(self.get_parameter("robot2_initial_x").value),
+                float(self.get_parameter("robot2_initial_y").value),
+                float(self.get_parameter("robot2_initial_yaw").value),
+            ], dtype=float),
+        }
 
         if len(self.robot_namespaces) != len(self.agent_ids):
             raise ValueError("robot_namespaces and agent_ids must have the same length")
@@ -149,6 +180,11 @@ class DmpcCoordinatorRosNode(Node):
             f"DMPC coordinator started for namespaces={self.robot_namespaces}, "
             f"agent_ids={self.agent_ids}, enable_motion={self.enable_motion}, "
             f"model={self.cfg.model}, n_agents={self.cfg.n_agents}, M={self.cfg.horizon_M()}"
+        )
+        self.get_logger().info(
+            f"World-frame initialization: frame={self.world_frame}, "
+            f"robot1=[{self.initial_world_pose_by_agent[1][0]:.3f}, {self.initial_world_pose_by_agent[1][1]:.3f}, {self.initial_world_pose_by_agent[1][2]:.3f}], "
+            f"robot2=[{self.initial_world_pose_by_agent[2][0]:.3f}, {self.initial_world_pose_by_agent[2][1]:.3f}, {self.initial_world_pose_by_agent[2][2]:.3f}]"
         )
         if not self.enable_motion:
             self.get_logger().warn("enable_motion=false: the node will compute commands but publish zero cmd_vel.")
@@ -221,19 +257,34 @@ class DmpcCoordinatorRosNode(Node):
 
         for row, agent_id in enumerate(self.agent_ids):
             msg = self.odom_by_agent[agent_id]
-            yaw = yaw_from_odom(msg)
-            yaw_by_agent[agent_id] = yaw
+            local_yaw = yaw_from_odom(msg)
+            x_local = float(msg.pose.pose.position.x)
+            y_local = float(msg.pose.pose.position.y)
 
-            r_all[row, 0] = float(msg.pose.pose.position.x)
-            r_all[row, 1] = float(msg.pose.pose.position.y)
+            # Each Yahboom publishes odom in its own local frame starting near (0,0,0).
+            # Transform that local odom pose into the shared world/map frame before
+            # passing positions to the distributed MPC.
+            x0, y0, yaw0 = self.initial_world_pose_by_agent.get(
+                agent_id, np.array([0.0, 0.0, 0.0], dtype=float)
+            )
+            c0 = math.cos(float(yaw0))
+            s0 = math.sin(float(yaw0))
+            x_world = float(x0) + c0 * x_local - s0 * y_local
+            y_world = float(y0) + s0 * x_local + c0 * y_local
+            yaw_world = normalize_angle(float(yaw0) + local_yaw)
 
-            # nav_msgs/Odometry twist is usually expressed in the child frame.
+            yaw_by_agent[agent_id] = yaw_world
+            r_all[row, 0] = x_world
+            r_all[row, 1] = y_world
+
+            # nav_msgs/Odometry twist is usually expressed in the robot body frame.
+            # Rotate body-frame velocity directly into the shared world frame using yaw_world.
             vx_b = float(msg.twist.twist.linear.x)
             vy_b = float(msg.twist.twist.linear.y)
-            c = math.cos(yaw)
-            s = math.sin(yaw)
-            v_all[row, 0] = vx_b * c - vy_b * s
-            v_all[row, 1] = vx_b * s + vy_b * c
+            cw = math.cos(yaw_world)
+            sw = math.sin(yaw_world)
+            v_all[row, 0] = vx_b * cw - vy_b * sw
+            v_all[row, 1] = vx_b * sw + vy_b * cw
 
         return r_all, v_all, yaw_by_agent
 
@@ -322,7 +373,7 @@ class DmpcCoordinatorRosNode(Node):
     def _publish_world_command(self, agent_id: int, u_world: np.ndarray, yaw: float) -> None:
         debug = Vector3Stamped()
         debug.header.stamp = self.get_clock().now().to_msg()
-        debug.header.frame_id = "odom"
+        debug.header.frame_id = self.world_frame
         debug.vector.x = float(u_world[0])
         debug.vector.y = float(u_world[1])
         debug.vector.z = 0.0
