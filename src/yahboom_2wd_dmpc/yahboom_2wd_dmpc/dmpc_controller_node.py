@@ -35,7 +35,12 @@ def main() -> None:
     parser.add_argument("--bind-port", type=int, default=None, help="Bind port. Defaults to ctrl_base_port + agent_id.")
     parser.add_argument("--endpoint", default=None, help="Full ZMQ bind endpoint, e.g. tcp://*:5601.")
 
-    args = parser.parse_args()
+    # This executable is a plain ZeroMQ process, not an rclpy node.
+    # When launched via launch_ros.actions.Node, ROS 2 appends arguments such as
+    #   --ros-args -r __node:=...
+    # Ignore those unknown ROS-specific arguments here so the same executable can
+    # be started with either `ros2 run` or `ros2 launch`.
+    args, _unknown_ros_args = parser.parse_known_args()
     cfg = cfg_from_args(args)
 
     agent_id = int(args.agent_id)

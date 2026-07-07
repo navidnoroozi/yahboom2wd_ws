@@ -141,3 +141,48 @@ research-tuned configuration.
 8. Record `/robot1/odom`, `/robot2/odom`, `/robot1/cmd_vel`, `/robot2/cmd_vel`, and `/dmpc/*`.
 
 Only enable obstacle avoidance after the two-robot formation run is stable.
+
+
+## Troubleshooting on Raspberry Pi: NumPy / CVXPY / ECOS
+
+If `dmpc_controller_node` prints an error similar to:
+
+```text
+A module that was compiled using NumPy 1.x cannot be run in NumPy 2.x
+AttributeError: _ARRAY_API not found
+ImportError: numpy.core.multiarray failed to import
+```
+
+then the Raspberry Pi has a user-local Python stack where `numpy` 2.x is mixed
+with compiled solver wheels such as `ecos` that were built against NumPy 1.x.
+For Ubuntu 22.04 / ROS 2 Humble on Raspberry Pi, use a NumPy 1.x CVXPY stack:
+
+```bash
+python3 -m pip uninstall -y numpy cvxpy ecos scs osqp clarabel
+python3 -m pip install --user --force-reinstall "numpy<2" "cvxpy<1.5" "ecos<2.1" "scs<3.3" "osqp<0.7"
+
+python3 - <<'PY'
+import numpy, cvxpy
+print("numpy", numpy.__version__)
+print("cvxpy", cvxpy.__version__)
+print("solvers", cvxpy.installed_solvers())
+PY
+```
+
+If the `ecos` import still fails, the controller will fall back to SCS inside
+`consensus_controller.py`, but the cleanest setup is to remove the broken wheel
+and reinstall the stack consistently.
+
+## Troubleshooting on Raspberry Pi: `--ros-args`
+
+`dmpc_controller_node` is a plain ZeroMQ process. ROS 2 launch may append
+`--ros-args -r __node:=...`. This package version uses `parse_known_args()` in
+`dmpc_controller_node.py`, so those ROS-specific arguments are ignored.
+Rebuild after replacing the package:
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select yahboom_2wd_dmpc
+source install/setup.bash
+```
