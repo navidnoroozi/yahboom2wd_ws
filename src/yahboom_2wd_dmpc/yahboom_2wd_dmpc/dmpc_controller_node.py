@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import signal
 import sys
+import time
 from typing import Optional
 
 import zmq
@@ -74,7 +75,7 @@ def main() -> None:
             msg = loads(sock.recv(flags=zmq.NOBLOCK))
         except zmq.Again:
             # Avoid blocking forever so SIGTERM from ros2 launch shuts down cleanly.
-            zmq.sleep(0.02)
+            time.sleep(0.02)
             continue
 
         mtype = msg.get("type")
