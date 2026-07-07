@@ -24,10 +24,9 @@ def generate_launch_description():
             parameters=[{
                 "robot_namespaces": ["robot1", "robot2"],
                 "agent_ids": [1, 2],
-                "controller_endpoints": [
-                    LaunchConfiguration("robot1_controller_endpoint"),
-                    LaunchConfiguration("robot2_controller_endpoint"),
-                ],
+                # Pass endpoints as scalar parameters. The node builds the list internally.
+                "robot1_controller_endpoint": LaunchConfiguration("robot1_controller_endpoint"),
+                "robot2_controller_endpoint": LaunchConfiguration("robot2_controller_endpoint"),
                 "rate_hz": LaunchConfiguration("rate_hz"),
                 "enable_motion": LaunchConfiguration("enable_motion"),
                 "model": "single_integrator",

@@ -49,6 +49,8 @@ class DmpcCoordinatorRosNode(Node):
         # Topology / ROS interface
         self.declare_parameter("robot_namespaces", ["robot1", "robot2"])
         self.declare_parameter("agent_ids", [1, 2])
+        self.declare_parameter("robot1_controller_endpoint", "tcp://192.168.178.51:5601")
+        self.declare_parameter("robot2_controller_endpoint", "tcp://192.168.178.52:5602")
         self.declare_parameter("controller_endpoints", ["tcp://192.168.178.51:5601", "tcp://192.168.178.52:5602"])
         self.declare_parameter("rate_hz", 5.0)
         self.declare_parameter("enable_motion", False)
@@ -83,7 +85,12 @@ class DmpcCoordinatorRosNode(Node):
 
         self.robot_namespaces = [str(x).strip("/") for x in self.get_parameter("robot_namespaces").value]
         self.agent_ids = [int(x) for x in self.get_parameter("agent_ids").value]
-        self.controller_endpoints = [str(x) for x in self.get_parameter("controller_endpoints").value]
+        ep1 = str(self.get_parameter("robot1_controller_endpoint").value).strip()
+        ep2 = str(self.get_parameter("robot2_controller_endpoint").value).strip()
+        if ep1 and ep2:
+            self.controller_endpoints = [ep1, ep2]
+        else:
+            self.controller_endpoints = [str(x) for x in self.get_parameter("controller_endpoints").value]
         self.rate_hz = float(self.get_parameter("rate_hz").value)
         self.enable_motion = bool(self.get_parameter("enable_motion").value)
         self.odom_timeout_s = float(self.get_parameter("odom_timeout_s").value)
@@ -109,12 +116,12 @@ class DmpcCoordinatorRosNode(Node):
 
         self.cmd_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.u_debug_publishers: Dict[int, rclpy.publisher.Publisher] = {}
-        self.subscriptions = []
+        self.odom_subscriptions = []
 
         for agent_id, ns in zip(self.agent_ids, self.robot_namespaces):
             self.cmd_publishers[agent_id] = self.create_publisher(Twist, f"/{ns}/cmd_vel", 10)
             self.u_debug_publishers[agent_id] = self.create_publisher(Vector3Stamped, f"/dmpc/{ns}/u_world", 10)
-            self.subscriptions.append(
+            self.odom_subscriptions.append(
                 self.create_subscription(
                     Odometry,
                     f"/{ns}/odom",
