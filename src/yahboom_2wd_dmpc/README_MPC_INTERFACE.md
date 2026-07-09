@@ -55,6 +55,8 @@ yahboom_2wd_dmpc/dmpc_coordinator_ros_node
 
   publishes:   /robot1/cmd_vel
                /robot2/cmd_vel
+               /dmpc/robot1/pose_world
+               /dmpc/robot2/pose_world
                /dmpc/robot1/u_world
                /dmpc/robot2/u_world
 
@@ -126,11 +128,22 @@ A simple first floor setup is:
 ```text
 world origin: marked point on the floor
 world x-axis: marked with tape
-robot1:       x0 = 0.0 m, y0 = -0.45 m, yaw0 = 0.0 rad
-robot2:       x0 = 0.0 m, y0 = +0.45 m, yaw0 = 0.0 rad
+robot1:       x0 = 0.0 m, y0 = -0.7 m, yaw0 = 0.0 rad
+robot2:       x0 = 0.0 m, y0 = +0.7 m, yaw0 = 0.0 rad
 ```
 
-The exact values must match the measured physical placement before starting the coordinator. Manual initial-pose offsets are acceptable for the first short, slow tests. For longer experiments or stronger safety claims, use shared external localization such as overhead camera/AprilTags, motion capture, UWB, or another global pose-correction method.
+The exact values must match the measured physical placement before starting the coordinator. Manual initial-pose offsets are acceptable for the first short, slow tests.
+
+The coordinator publishes the transformed common-frame poses on:
+
+```text
+/dmpc/robot1/pose_world
+/dmpc/robot2/pose_world
+```
+
+Use these topics as the main verification that the MPC is using the intended world-frame positions. The raw `/robot1/odom` and `/robot2/odom` topics may still start near local `(0, 0, 0)`.
+
+For longer experiments or stronger safety claims, use shared external localization such as overhead camera/AprilTags, motion capture, UWB, or another global pose-correction method.
 
 ## Installation
 
@@ -271,10 +284,10 @@ ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
   robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
   robot1_initial_x:=0.0 \
-  robot1_initial_y:=-0.45 \
+  robot1_initial_y:=-0.7 \
   robot1_initial_yaw:=0.0 \
   robot2_initial_x:=0.0 \
-  robot2_initial_y:=0.45 \
+  robot2_initial_y:=0.7 \
   robot2_initial_yaw:=0.0 \
   enable_motion:=false
 ```
@@ -310,8 +323,17 @@ Check DMPC debug outputs:
 
 ```bash
 ros2 topic list | grep dmpc
+ros2 topic echo /dmpc/robot1/pose_world
+ros2 topic echo /dmpc/robot2/pose_world
 ros2 topic echo /dmpc/robot1/u_world
 ros2 topic echo /dmpc/robot2/u_world
+```
+
+For the verified dry-run setup with `robot1_initial_y:=-0.7` and `robot2_initial_y:=0.7`, the expected world poses at startup are:
+
+```text
+/dmpc/robot1/pose_world -> frame_id = map, position.x = 0.0, position.y = -0.7
+/dmpc/robot2/pose_world -> frame_id = map, position.x = 0.0, position.y = +0.7
 ```
 
 Check that physical motion is disabled:
@@ -323,17 +345,51 @@ ros2 topic echo /robot2/cmd_vel
 
 With `enable_motion:=false`, the robot command topics should remain zero or nearly zero even if `/dmpc/robot*/u_world` contains nonzero planned world-frame commands.
 
-## First motion-enabled test
+## Current verified dry-run status
 
-Only after the dry-run checks are correct, run the same coordinator launch with:
+The two-robot dry run has been verified with both robot-side controllers running and the Ubuntu VM coordinator launched with:
 
-```bash
-enable_motion:=true
+```text
+robot1: x0 = 0.0 m, y0 = -0.7 m, yaw0 = 0.0 rad
+robot2: x0 = 0.0 m, y0 = +0.7 m, yaw0 = 0.0 rad
 ```
 
-Use a clear test area, low battery-safe speed, and a measured initial separation larger than `d_safe`.
+The following conditions have been confirmed:
 
-Record a bag:
+```text
+/dmpc/robot1/pose_world exists and reports frame_id = map, position = (0.0, -0.7, 0.0)
+/dmpc/robot2/pose_world exists and reports frame_id = map, position = (0.0, +0.7, 0.0)
+/dmpc/robot1/u_world and /dmpc/robot2/u_world are published
+/robot1/cmd_vel and /robot2/cmd_vel remain zero when enable_motion=false
+```
+
+This means the ROS 2 namespaces, ZeroMQ controller communication, common-frame odometry transform, and dry-run safety gate are working. The next step is a short low-speed test with `enable_motion:=true`.
+
+## First motion-enabled test
+
+Only after the dry-run checks are correct, run a short conservative motion-enabled test. Use a clear test area, low battery-safe speed, a measured initial separation larger than `d_safe`, and be ready to stop the coordinator with `Ctrl+C`.
+
+Recommended first motion-enabled launch:
+
+```bash
+ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
+  robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
+  robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
+  robot1_initial_x:=0.0 \
+  robot1_initial_y:=-0.7 \
+  robot1_initial_yaw:=0.0 \
+  robot2_initial_x:=0.0 \
+  robot2_initial_y:=0.7 \
+  robot2_initial_yaw:=0.0 \
+  max_linear_speed:=0.04 \
+  max_angular_speed:=0.20 \
+  u_bound:=0.04 \
+  enable_motion:=true
+```
+
+This is intentionally slower than the default commissioning values. If the motion is smooth and the bag looks correct, repeat with the default values.
+
+Record a bag before starting the motion-enabled coordinator:
 
 ```bash
 ros2 bag record -s mcap \
@@ -342,6 +398,8 @@ ros2 bag record -s mcap \
   /robot2/odom \
   /robot1/cmd_vel \
   /robot2/cmd_vel \
+  /dmpc/robot1/pose_world \
+  /dmpc/robot2/pose_world \
   /dmpc/robot1/u_world \
   /dmpc/robot2/u_world \
   /robot1/diagnostics \
@@ -424,6 +482,15 @@ Do not assign to `self.subscriptions` inside `dmpc_coordinator_ros_node.py`. `rc
 ### Both robots start at `(0, 0)`
 
 This is normal for local odometry but not sufficient for MPC. Always provide measured initial world poses and verify the common world-frame conversion before enabling motion.
+
+Use:
+
+```bash
+ros2 topic echo /dmpc/robot1/pose_world
+ros2 topic echo /dmpc/robot2/pose_world
+```
+
+The `pose_world` topics, not the raw local odometry topics, are the positions used by the coordinator for MPC state construction.
 
 ## Git workflow
 
