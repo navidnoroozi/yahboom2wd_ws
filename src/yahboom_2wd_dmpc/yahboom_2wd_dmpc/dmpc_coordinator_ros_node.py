@@ -10,7 +10,7 @@ import zmq
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import Twist, Vector3Stamped
+from geometry_msgs.msg import PoseStamped, Twist, Vector3Stamped
 from nav_msgs.msg import Odometry
 
 from .consensus_comm import dumps, loads, make_envelope
@@ -28,6 +28,11 @@ def yaw_from_odom(msg: Odometry) -> float:
         2.0 * (q.w * q.z + q.x * q.y),
         1.0 - 2.0 * (q.y * q.y + q.z * q.z),
     )
+
+
+def quaternion_from_yaw(yaw: float) -> tuple[float, float]:
+    """Return (z, w) quaternion components for a planar yaw angle."""
+    return math.sin(0.5 * yaw), math.cos(0.5 * yaw)
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -147,11 +152,13 @@ class DmpcCoordinatorRosNode(Node):
 
         self.cmd_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.u_debug_publishers: Dict[int, rclpy.publisher.Publisher] = {}
+        self.pose_debug_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.odom_subscriptions = []
 
         for agent_id, ns in zip(self.agent_ids, self.robot_namespaces):
             self.cmd_publishers[agent_id] = self.create_publisher(Twist, f"/{ns}/cmd_vel", 10)
             self.u_debug_publishers[agent_id] = self.create_publisher(Vector3Stamped, f"/dmpc/{ns}/u_world", 10)
+            self.pose_debug_publishers[agent_id] = self.create_publisher(PoseStamped, f"/dmpc/{ns}/pose_world", 10)
             self.odom_subscriptions.append(
                 self.create_subscription(
                     Odometry,
@@ -286,6 +293,12 @@ class DmpcCoordinatorRosNode(Node):
             v_all[row, 0] = vx_b * cw - vy_b * sw
             v_all[row, 1] = vx_b * sw + vy_b * cw
 
+            # Publish the actual world/map pose that will be used by the MPC.
+            # This makes dry-run verification unambiguous:
+            #   /robotX/odom can still start at local (0,0,0),
+            #   while /dmpc/robotX/pose_world shows the transformed common-frame pose.
+            self._publish_world_pose_debug(agent_id, x_world, y_world, yaw_world)
+
         return r_all, v_all, yaw_by_agent
 
     def _request_controller(self, agent_id: int, msg_type: str, payload: dict) -> Optional[dict]:
@@ -369,6 +382,26 @@ class DmpcCoordinatorRosNode(Node):
             self._publish_world_command(agent_id, safe_cmds[agent_id], yaw_by_agent[agent_id])
 
         self.outer_index += 1
+
+    def _publish_world_pose_debug(self, agent_id: int, x_world: float, y_world: float, yaw_world: float) -> None:
+        """Publish the transformed world/map pose used internally by the MPC.
+
+        This is a debug/verification topic. It lets the user confirm that local
+        /robotX/odom values that start near (0,0,0) are actually transformed
+        into the common world/map frame before the MPC receives r_all.
+        """
+        msg = PoseStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.world_frame
+        msg.pose.position.x = float(x_world)
+        msg.pose.position.y = float(y_world)
+        msg.pose.position.z = 0.0
+        z, w = quaternion_from_yaw(float(yaw_world))
+        msg.pose.orientation.x = 0.0
+        msg.pose.orientation.y = 0.0
+        msg.pose.orientation.z = float(z)
+        msg.pose.orientation.w = float(w)
+        self.pose_debug_publishers[agent_id].publish(msg)
 
     def _publish_world_command(self, agent_id: int, u_world: np.ndarray, yaw: float) -> None:
         debug = Vector3Stamped()
