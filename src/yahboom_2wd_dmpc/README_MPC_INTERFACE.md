@@ -211,8 +211,6 @@ ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
 
 Use `namespace:=robot2` and the calibrated `robot2` values on the second robot.
 
-**Note:** `robot2` has the same calibrated values as those for `robot1` including `linear_cmd_scale:=1.7`, `angular_cmd_scale:=1.0` and `odom_linear_scale:=1.5`.
-
 ## Robot-side DMPC controller nodes
 
 Start the local controller node after the Yahboom bridge is running.

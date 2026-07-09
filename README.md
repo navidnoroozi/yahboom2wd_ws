@@ -61,29 +61,68 @@ After adding `odom_linear_scale = 1.5`, the feedback `straight` test with a 1.0 
 ## Packages
 
 ```text
-yahboom2wd_ws/src/
-├── yahboom_2wd_driver/
-│   ├── yahboom_2wd_node.py        # cmd_vel <-> Rosmaster_Lib serial bridge
-│   ├── serial_probe.py            # checks serial link, firmware version, sensors
-│   ├── motor_test.py              # low-speed M2/M4 PWM test while robot is lifted
-│   └── vendor/Rosmaster_Lib.py    # fallback copy of Yahboom driver library V3.3.9
-├── yahboom_2wd_description/
-│   └── urdf/yahboom_2wd.urdf.xacro
-├── yahboom_2wd_bringup/
-│   ├── launch/yahboom_2wd.launch.py
-│   ├── config/yahboom_2wd.yaml
-│   └── scripts/install_udev_yahboom.sh
-└── yahboom_2wd_tests/
-    ├── yahboom_2wd_tests/
-    │   └── path_follower_node.py  # odometry-feedback path-following tests
-    ├── launch/
-    │   └── path_follower.launch.py
-    ├── config/
-    │   └── path_tests.yaml
-    ├── package.xml
-    ├── setup.py
-    └── setup.cfg
+yahboom2wd_ws/
+├── README.md
+├── src/
+│   ├── yahboom_2wd_driver/
+│   │   ├── yahboom_2wd_node.py        # cmd_vel <-> Rosmaster_Lib serial bridge
+│   │   ├── serial_probe.py            # checks serial link, firmware version, sensors
+│   │   ├── motor_test.py              # low-speed M2/M4 PWM test while robot is lifted
+│   │   ├── vendor/
+│   │   │   └── Rosmaster_Lib.py       # fallback copy of Yahboom driver library V3.3.9
+│   │   ├── package.xml
+│   │   ├── setup.py
+│   │   └── setup.cfg
+│   ├── yahboom_2wd_description/
+│   │   ├── urdf/
+│   │   │   └── yahboom_2wd.urdf.xacro
+│   │   ├── package.xml
+│   │   └── CMakeLists.txt
+│   ├── yahboom_2wd_bringup/
+│   │   ├── launch/
+│   │   │   └── yahboom_2wd.launch.py
+│   │   ├── config/
+│   │   │   └── yahboom_2wd.yaml
+│   │   ├── scripts/
+│   │   │   └── install_udev_yahboom.sh
+│   │   ├── package.xml
+│   │   └── CMakeLists.txt
+│   ├── yahboom_2wd_tests/
+│   │   ├── yahboom_2wd_tests/
+│   │   │   └── path_follower_node.py  # odometry-feedback path-following tests
+│   │   ├── launch/
+│   │   │   └── path_follower.launch.py
+│   │   ├── config/
+│   │   │   └── path_tests.yaml
+│   │   ├── package.xml
+│   │   ├── setup.py
+│   │   └── setup.cfg
+│   └── yahboom_2wd_dmpc/
+│       ├── yahboom_2wd_dmpc/
+│       │   ├── consensus_comm.py          # JSON envelope helpers for ZeroMQ messages
+│       │   ├── consensus_config.py        # NetConfig and common DMPC parameters
+│       │   ├── consensus_controller.py    # single-/double-integrator MPC solvers
+│       │   ├── explicit_hybrid_controller.py
+│       │   ├── dmpc_controller_node.py    # robot-side ZMQ REP controller node
+│       │   ├── dmpc_coordinator_ros_node.py # VM-side ROS/ZMQ coordinator
+│       │   ├── config_utils.py
+│       │   ├── controller_node.py         # original/SIL-compatible controller entry point
+│       │   ├── coordinator_node.py        # original/SIL-compatible coordinator entry point
+│       │   └── __init__.py
+│       ├── launch/
+│       │   ├── robot_dmpc_controller.launch.py
+│       │   └── two_robot_dmpc_coordinator.launch.py
+│       ├── config/
+│       │   └── two_robot_dmpc.yaml
+│       ├── README_MPC_INTERFACE.md
+│       ├── package.xml
+│       ├── setup.py
+│       └── setup.cfg
+└── tools/
+    └── plot_yahboom_bag.py
 ```
+
+The package `yahboom_2wd_dmpc` is the current ROS 2 / ZeroMQ interface layer between the commissioned Yahboom robots and the distributed MPC planning app. It does not replace the low-level Yahboom bridge. It uses `/robotX/odom` as feedback, publishes `/robotX/cmd_vel`, and communicates with robot-side MPC controller nodes through ZeroMQ.
 
 ## ROS API per robot namespace
 
@@ -206,6 +245,16 @@ sinusoidal
 - With the sinusoidal test passed, the standard single-robot feedback validation suite for `robot1` is complete. The next hardware step is to assemble `robot2`, repeat the same calibration and standard tests for `robot2`, and identify its own calibration values before running any multi-robot MPC experiment.
 - The distributed MPC development strategy is staged: first validate the complete software/ROS/network/MPC pipeline with two robots (`robot1` and `robot2`), then order and commission `robot3` and `robot4` only after the two-robot distributed MPC test is stable. This reduces cost and risk before scaling to the intended four-robot setup.
 
+- `robot2` has now also been assembled, calibrated, and validated with the same standard single-robot tests. Therefore, the next active stage is the two-robot distributed MPC hardware dry run.
+- A new package, `yahboom_2wd_dmpc`, was added to connect the commissioned Yahboom ROS 2 interfaces to the existing distributed MPC planning app. The package uses a star topology: each robot runs a local ZeroMQ REP controller node, and the Ubuntu VM runs the ROS/ZMQ coordinator.
+- During first deployment of `yahboom_2wd_dmpc`, the Raspberry Pis required a consistent Python optimization stack. The broken combination was user-local `numpy` 2.x with solver wheels compiled against NumPy 1.x. The working Humble/RPi setup pins NumPy below 2 and reinstalls CVXPY/ECOS/SCS/OSQP consistently.
+- `rosdep` may report that it cannot resolve the key `ament_python` on the Raspberry Pis even though the packages build successfully. For this workspace, run `rosdep install` with `--skip-keys "ament_python"` when needed.
+- The robot-side `dmpc_controller_node.py` was corrected to use `parse_known_args()` so that ROS 2 launch arguments such as `--ros-args -r __node:=...` do not crash the plain ZeroMQ/argparse node.
+- The robot-side `dmpc_controller_node.py` was also corrected to use `time.sleep(0.02)` instead of `zmq.sleep(0.02)`, because the installed `pyzmq` version on the Raspberry Pis does not provide `zmq.sleep()`.
+- The VM-side coordinator launch was corrected so that `robot1_controller_endpoint` and `robot2_controller_endpoint` are passed as separate scalar parameters. Passing a list of `LaunchConfiguration` objects created one concatenated string instead of a ROS 2 string array.
+- The VM-side `dmpc_coordinator_ros_node.py` was corrected to avoid assigning to `self.subscriptions`, because `rclpy.node.Node` already has a read-only property with that name. The coordinator now stores odometry subscriptions in `self.odom_subscriptions`.
+- The two robot odometry topics naturally start in separate local frames, usually around `(0, 0, 0)` for each robot. This is normal, but the distributed MPC must not use the raw local odometries directly. The coordinator must transform each local odometry into a shared world/map frame using measured initial poses before building `r_all` for the MPC.
+
 ## Role of `ROS_DOMAIN_ID`
 
 ROS 2 uses DDS for discovery and communication. `ROS_DOMAIN_ID` separates ROS 2 systems on the same network into independent communication domains.
@@ -301,9 +350,12 @@ sudo apt install -y \
   ros-humble-tf2-ros \
   ros-humble-rosbag2-storage-mcap \
   python3-serial \
+  python3-zmq \
+  python3-numpy \
   python3-colcon-common-extensions \
   python3-rosdep \
   python3-matplotlib \
+  python3-pip \
   git
 
 sudo rosdep init 2>/dev/null || true
@@ -315,14 +367,44 @@ mkdir -p ~/yahboom2wd_ws/src
 #   yahboom_2wd_description
 #   yahboom_2wd_bringup
 #   yahboom_2wd_tests
+#   yahboom_2wd_dmpc
 
 cd ~/yahboom2wd_ws
-rosdep install --from-paths src -y --ignore-src --rosdistro humble
+
+# On some Raspberry Pi / ROS 2 Humble installations, rosdep cannot resolve
+# ament_python although the build system is already installed. In that case,
+# skip that key explicitly.
+rosdep install --from-paths src -y --ignore-src --rosdistro humble \
+  --skip-keys "ament_python"
+
 colcon build --symlink-install
 
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 ```
+
+For the distributed MPC package on the Raspberry Pis, keep the user-local Python optimization stack consistent. The tested fix after a NumPy/CVXPY/ECOS import conflict was:
+
+```bash
+python3 -m pip uninstall -y numpy cvxpy ecos scs osqp clarabel
+
+python3 -m pip install --user --force-reinstall \
+  "numpy<2" \
+  "cvxpy<1.5" \
+  "ecos<2.1" \
+  "scs<3.3" \
+  "osqp<0.7"
+
+python3 - <<'PY'
+import numpy
+import cvxpy as cp
+print("numpy:", numpy.__version__, numpy.__file__)
+print("cvxpy:", cp.__version__)
+print("installed solvers:", cp.installed_solvers())
+PY
+```
+
+The important point is that `numpy` must be `1.x` on the Raspberry Pis for the current solver wheels. A mixed environment with NumPy `2.x` and old compiled solver wheels causes `_ARRAY_API not found` or `numpy.core.multiarray failed to import`.
 
 Install the udev alias used by Yahboom tutorials:
 
@@ -524,8 +606,8 @@ The Yahboom bridge must already be running in Terminal 1 before starting a feedb
 | 4b | `circle` right | Validate sustained right constant-curvature tracking | Similar to the left circle, with opposite rotation direction and about 20 cm y-axis offset | Passed with observation | Keep as sustained right-turn baseline |
 | 5 | `stop_and_go` | Validate repeated starts/stops and transient behavior | After fixing `ref_stop_and_go()`, the robot moved smoothly straight, stopped twice between the three move phases, and ended around `0.57 m` for a `0.54 m` reference | Passed | Keep as transient-response baseline |
 | 6 | `sinusoidal` | Validate smooth left-right changing curvature | Robot traveled approximately 2 m in a smooth low-amplitude sinusoidal shape, with small fluctuations around the reference, final `dx ≈ 2.03 m`, `dy ≈ -0.02 m`, and automatic stopping | Passed | Single-robot suite for `robot1` complete |
-| 7 | `robot2` calibration and validation | Repeat calibration and the same standard test suite on the second Yahboom 2WD robot | Robot not assembled yet | Next | Assemble `robot2`, then calibrate and test it independently |
-| 8 | two-robot distributed MPC dry run | Validate namespaces, networking, time alignment, command publishing, and two-robot MPC behavior | Not started | Planned | Start after `robot2` passes the single-robot suite |
+| 7 | `robot2` calibration and validation | Repeat calibration and the same standard test suite on the second Yahboom 2WD robot | `robot2` has been assembled, calibrated, and has passed the same standard tests | Passed | Keep its own calibration values as a separate baseline |
+| 8 | two-robot distributed MPC dry run | Validate namespaces, networking, time alignment, common world frame, ZeroMQ communication, command publishing, and two-robot MPC behavior | Started in dry-run mode; controller and coordinator launch issues have been fixed | Active | Re-test with measured initial world-frame poses and `enable_motion:=false` |
 | 9 | four-robot distributed MPC setup | Scale the final planner to four robots | Not started | Future | Order and commission `robot3` and `robot4` after the two-robot setup is stable |
 
 The progress table should be updated after every bagged experiment. Keep the terminal command, bag folder name, physical observation, and plotted result together so that calibration decisions are traceable.
@@ -1021,23 +1103,25 @@ ROS_DOMAIN_ID      = 42
 
 The values above are the current baseline for `yahboom1`. Do not change them unless a new bagged experiment clearly shows a repeatable error.
 
-## Planned calibration record for `robot2`
+## Current known calibration for `robot2`
 
-`robot2` is not assembled yet. After assembly, use the same fields as `robot1`, but fill them with `robot2`-specific values from its own calibration tests:
+`robot2` has been assembled and has passed the same standard commissioning tests as `robot1`. Keep its calibration record separate from `robot1`, because two mechanically similar Yahboom robots can still need different command and odometry scaling values.
+
+Fill the exact final values from the `robot2` calibration bags:
 
 ```text
-wheel_radius       = TBD
-wheel_separation   = TBD
+wheel_radius       = 0.0325 m or measured robot2-specific value
+wheel_separation   = 0.120 m or measured robot2-specific value
 left_motor_port    = M2
 right_motor_port   = M4
 command_mode       = motion
-linear_cmd_scale   = TBD
-angular_cmd_scale  = TBD
-odom_linear_scale  = TBD
+linear_cmd_scale   = <robot2 calibrated value>
+angular_cmd_scale  = <robot2 calibrated value>
+odom_linear_scale  = <robot2 calibrated value>
 ROS_DOMAIN_ID      = 42
 ```
 
-Start `robot2` from the `robot1` calibration values only as an initial guess. The final `robot2` values must be based on its own open-loop straight, feedback straight, pure-rotation, arc, circle, stop-and-go, and sinusoidal bags.
+Do not silently copy `robot1` calibration values into `robot2` unless the `robot2` open-loop straight, feedback straight, pure rotation, arc, circle, stop-and-go, and sinusoidal bags support that decision.
 
 ## Current recommended single-robot feedback test settings for `yahboom1`
 
@@ -1141,39 +1225,35 @@ After fixing `ref_stop_and_go()`, this test passed with smooth straight motion, 
 
 ### Next step
 
-The standard single-robot suite has passed on `robot1`. The next step is to assemble and commission `robot2`.
+The standard single-robot suite has passed on both `robot1` and `robot2`. The next step is to re-test the two-robot distributed MPC package in dry-run mode with the corrected controller/coordinator nodes and the common world-frame initialization.
 
-Use the same single-robot test order for `robot2`:
+Before enabling real motion, the coordinator must receive both local odometry topics and transform them into a shared world/map frame. Both robots starting their own local odometry at `(0, 0, 0)` is normal, but the coordinator must be told the measured initial world poses.
 
-```text
-1. serial probe and lifted motor test
-2. open-loop straight-line command calibration
-3. feedback straight test and odometry scale calibration
-4. pure rotation left/right
-5. arc left/right
-6. circle left/right
-7. stop-and-go
-8. sinusoidal
-```
-
-For `robot2`, use namespace `robot2` consistently. Example bridge launch, initially using the `robot1` calibration as a starting point only:
+Example for a side-by-side first test, both robots facing the positive world x-axis:
 
 ```bash
-ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
-  namespace:=robot2 \
-  serial_port:=/dev/myserial \
-  command_mode:=motion \
-  linear_cmd_scale:=1.7 \
-  angular_cmd_scale:=1.0 \
-  odom_linear_scale:=1.5
+ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
+  robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
+  robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
+  robot1_initial_x:=0.0 \
+  robot1_initial_y:=-0.45 \
+  robot1_initial_yaw:=0.0 \
+  robot2_initial_x:=0.0 \
+  robot2_initial_y:=0.45 \
+  robot2_initial_yaw:=0.0 \
+  enable_motion:=false
 ```
 
-After `robot2` is calibrated and its single-robot suite passes, start the two-robot distributed MPC stage with both robots running simultaneously:
+Verify the dry run first:
 
-```text
-robot1 -> /robot1/cmd_vel, /robot1/odom
-robot2 -> /robot2/cmd_vel, /robot2/odom
+```bash
+ros2 topic echo /dmpc/robot1/u_world
+ros2 topic echo /dmpc/robot2/u_world
+ros2 topic echo /robot1/cmd_vel
+ros2 topic echo /robot2/cmd_vel
 ```
+
+With `enable_motion:=false`, `/robot1/cmd_vel` and `/robot2/cmd_vel` should remain zero even if the DMPC debug topics contain nonzero planned commands. Only after this check is correct should the same launch be tested with `enable_motion:=true` in a clear area at low speed.
 
 Only after the two-robot distributed MPC pipeline is stable should the project scale to `robot3` and `robot4`.
 
@@ -1259,6 +1339,49 @@ It also publishes debug world-frame commands:
 /dmpc/robot2/u_world
 ```
 
+
+### Common world/map frame for the two-robot MPC
+
+Each Yahboom bridge publishes a local odometry frame. Therefore, after startup it is normal for both robots to report approximately:
+
+```text
+robot1 local odom: x ≈ 0, y ≈ 0, yaw ≈ 0
+robot2 local odom: x ≈ 0, y ≈ 0, yaw ≈ 0
+```
+
+This must not be passed directly to the MPC as if both poses were in one global frame. The coordinator must transform each local odometry into a shared world/map frame before building `r_all`.
+
+For robot `i`, the measured initial world pose is:
+
+```text
+(x0_i, y0_i, yaw0_i)
+```
+
+and the coordinator computes:
+
+```text
+x_world   = x0_i + cos(yaw0_i) * x_local - sin(yaw0_i) * y_local
+y_world   = y0_i + sin(yaw0_i) * x_local + cos(yaw0_i) * y_local
+yaw_world = yaw0_i + yaw_local
+```
+
+For the first real test, mark a world origin and x-axis on the floor, place both robots at measured coordinates, align their headings with the marked axis, and only then start the robot bridges. The VM coordinator launch must include the measured initial poses, for example:
+
+```bash
+ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
+  robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
+  robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
+  robot1_initial_x:=0.0 \
+  robot1_initial_y:=-0.45 \
+  robot1_initial_yaw:=0.0 \
+  robot2_initial_x:=0.0 \
+  robot2_initial_y:=0.45 \
+  robot2_initial_yaw:=0.0 \
+  enable_motion:=false
+```
+
+This is the minimum requirement for meaningful inter-robot distance, formation, and collision-avoidance calculations. Longer experiments or stronger safety claims will eventually require external shared localization such as overhead camera/AprilTags, motion capture, UWB, or another global pose-correction method.
+
 ### First two-robot MPC test policy
 
 Start with conservative real-robot parameters:
@@ -1278,17 +1401,36 @@ obstacles_enabled  = false
 
 Start with `obstacles_enabled = false` to validate the communication, formation behavior, state feedback, and velocity-command conversion. Enable obstacle avoidance only after the basic two-robot formation run is repeatable and safe.
 
+
+### Current DMPC package fixes and deployment notes
+
+The first hardware deployment revealed and fixed the following issues:
+
+| Area | Symptom | Fix |
+|---|---|---|
+| `rosdep` | `Cannot locate rosdep definition for [ament_python]` | Build still succeeds; use `--skip-keys "ament_python"` during `rosdep install` if needed |
+| Python solver stack | NumPy 2.x with old ECOS wheel caused `_ARRAY_API not found` | Use `numpy<2`, `cvxpy<1.5`, `ecos<2.1`, `scs<3.3`, `osqp<0.7` on Raspberry Pi |
+| Robot controller node | ROS 2 launch appended `--ros-args`, which argparse rejected | Use `parse_known_args()` in `dmpc_controller_node.py` |
+| Robot controller node | `zmq.sleep()` did not exist in the installed pyzmq version | Use `time.sleep(0.02)` |
+| VM coordinator launch | Two controller endpoints were concatenated into one string | Pass `robot1_controller_endpoint` and `robot2_controller_endpoint` as scalar parameters |
+| VM coordinator node | `self.subscriptions` collided with a read-only `rclpy.node.Node` property | Use `self.odom_subscriptions` |
+| MPC state frame | Both local odometries started at `(0, 0)` | Transform local odometry into a common world/map frame using measured initial poses |
+
+Commit these fixes to the Git repository and pull the same version on `robot1`, `robot2`, and the Ubuntu VM. Avoid keeping different local package versions on different machines.
+
 ### Deployment order for the two-robot DMPC test
 
 1. Start the calibrated Yahboom bridge on `robot1`.
 2. Start the calibrated Yahboom bridge on `robot2`.
 3. Start the local `dmpc_controller_node` on `robot1` with `agent_id:=1`.
 4. Start the local `dmpc_controller_node` on `robot2` with `agent_id:=2`.
-5. Start the Ubuntu VM coordinator with `enable_motion:=false`.
-6. Confirm that the VM sees `/robot1/odom` and `/robot2/odom`.
-7. Confirm that the VM can communicate with both ZMQ controller endpoints.
-8. Inspect `/dmpc/robot1/u_world` and `/dmpc/robot2/u_world`.
-9. Switch to `enable_motion:=true` only in a clear test area.
-10. Record a bag containing both robots' odometry, commands, and DMPC debug topics.
+5. Mark a common world/map frame on the floor and measure `robot1` and `robot2` initial poses.
+6. Start the Ubuntu VM coordinator with the measured `robot1_initial_*` and `robot2_initial_*` parameters and `enable_motion:=false`.
+7. Confirm that the VM sees `/robot1/odom` and `/robot2/odom`.
+8. Confirm that the VM can communicate with both ZMQ controller endpoints.
+9. Inspect `/dmpc/robot1/u_world` and `/dmpc/robot2/u_world`.
+10. Confirm that `/robot1/cmd_vel` and `/robot2/cmd_vel` remain zero in dry-run mode.
+11. Switch to `enable_motion:=true` only in a clear test area.
+12. Record a bag containing both robots' odometry, commands, and DMPC debug topics.
 
 Do not move to four physical robots until the two-robot stack runs repeatably and safely.
