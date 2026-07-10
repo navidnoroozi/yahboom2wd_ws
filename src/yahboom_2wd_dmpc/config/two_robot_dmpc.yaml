@@ -24,9 +24,35 @@ dmpc_coordinator_ros_node:
     r_bound: 5.0
     dt: 0.20
 
+    # Safety and formation geometry.
+    # For n_agents=2 and formation_radius_override=0, the desired pair distance is
+    # d_form = d_safe + formation_margin = 0.80 m. Keep d_agent_exit < d_form.
     d_safe: 0.65
     formation_margin: 0.15
     formation_rotation_rad: 0.0
+    formation_radius_override: 0.0
+
+    # Explicit-hybrid safety thresholds and hysteresis.
+    safety_warning_radius: 1.20
+    obstacle_warning_radius: 1.20
+    d_agent_enter: 0.70
+    d_agent_exit: 0.75
+    d_obs_enter: 0.45
+    d_obs_exit: 0.85
+
+    # Single-integrator explicit-hybrid gains.
+    modeC_repulsion_gain_si: 0.90
+    modeO_target_gain_si: 0.95
+    modeCO_repulsion_gain_si: 0.90
+    modeCO_target_gain_si: 0.85
+    nominal_blend_C_si: 0.35
+    nominal_blend_O_si: 0.20
+    nominal_blend_CO_si: 0.15
+
+    # Practical safety-filter margins.
+    pair_filter_margin: 0.04
+    obs_filter_margin: 0.05
+    filter_projection_passes: 4
 
     safety_enabled: true
     obstacles_enabled: false

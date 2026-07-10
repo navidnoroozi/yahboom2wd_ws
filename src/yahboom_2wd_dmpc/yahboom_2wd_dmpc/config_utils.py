@@ -40,6 +40,31 @@ def add_yahboom_dmpc_args(parser: argparse.ArgumentParser) -> argparse.ArgumentP
     parser.add_argument("--d-safe", type=float, default=0.65)
     parser.add_argument("--formation-margin", type=float, default=0.15)
     parser.add_argument("--formation-rotation-rad", type=float, default=0.0)
+    parser.add_argument("--formation-radius-override", type=float, default=0.0)
+
+    # Explicit-hybrid safety thresholds and hysteresis.  For two robots with
+    # d_safe=0.65 and formation_margin=0.15, the desired formation distance is
+    # 0.80 m, so d_agent_exit should stay below 0.80 m.
+    parser.add_argument("--safety-warning-radius", type=float, default=1.20)
+    parser.add_argument("--obstacle-warning-radius", type=float, default=1.20)
+    parser.add_argument("--d-agent-enter", type=float, default=0.70)
+    parser.add_argument("--d-agent-exit", type=float, default=0.75)
+    parser.add_argument("--d-obs-enter", type=float, default=0.45)
+    parser.add_argument("--d-obs-exit", type=float, default=0.85)
+
+    # Single-integrator explicit-hybrid gains.
+    parser.add_argument("--modeC-repulsion-gain-si", type=float, default=0.90)
+    parser.add_argument("--modeO-target-gain-si", type=float, default=0.95)
+    parser.add_argument("--modeCO-repulsion-gain-si", type=float, default=0.90)
+    parser.add_argument("--modeCO-target-gain-si", type=float, default=0.85)
+    parser.add_argument("--nominal-blend-C-si", type=float, default=0.35)
+    parser.add_argument("--nominal-blend-O-si", type=float, default=0.20)
+    parser.add_argument("--nominal-blend-CO-si", type=float, default=0.15)
+
+    # Practical safety-filter margins.
+    parser.add_argument("--pair-filter-margin", type=float, default=0.04)
+    parser.add_argument("--obs-filter-margin", type=float, default=0.05)
+    parser.add_argument("--filter-projection-passes", type=int, default=4)
 
     parser.add_argument("--safety-enabled", type=str2bool, default=True)
     parser.add_argument("--safety-method", default="explicit_hybrid")
@@ -78,6 +103,23 @@ def cfg_from_args(args: argparse.Namespace) -> NetConfig:
         d_safe=float(getattr(args, "d_safe", 0.65)),
         formation_margin=float(getattr(args, "formation_margin", 0.15)),
         formation_rotation_rad=float(getattr(args, "formation_rotation_rad", 0.0)),
+        formation_radius_override=float(getattr(args, "formation_radius_override", 0.0)),
+        safety_warning_radius=float(getattr(args, "safety_warning_radius", 1.20)),
+        obstacle_warning_radius=float(getattr(args, "obstacle_warning_radius", 1.20)),
+        d_agent_enter=float(getattr(args, "d_agent_enter", 0.70)),
+        d_agent_exit=float(getattr(args, "d_agent_exit", 0.75)),
+        d_obs_enter=float(getattr(args, "d_obs_enter", 0.45)),
+        d_obs_exit=float(getattr(args, "d_obs_exit", 0.85)),
+        modeC_repulsion_gain_si=float(getattr(args, "modeC_repulsion_gain_si", 0.90)),
+        modeO_target_gain_si=float(getattr(args, "modeO_target_gain_si", 0.95)),
+        modeCO_repulsion_gain_si=float(getattr(args, "modeCO_repulsion_gain_si", 0.90)),
+        modeCO_target_gain_si=float(getattr(args, "modeCO_target_gain_si", 0.85)),
+        nominal_blend_C_si=float(getattr(args, "nominal_blend_C_si", 0.35)),
+        nominal_blend_O_si=float(getattr(args, "nominal_blend_O_si", 0.20)),
+        nominal_blend_CO_si=float(getattr(args, "nominal_blend_CO_si", 0.15)),
+        pair_filter_margin=float(getattr(args, "pair_filter_margin", 0.04)),
+        obs_filter_margin=float(getattr(args, "obs_filter_margin", 0.05)),
+        filter_projection_passes=int(getattr(args, "filter_projection_passes", 4)),
         safety_enabled=bool(getattr(args, "safety_enabled", True)),
         safety_method=str(getattr(args, "safety_method", "explicit_hybrid")),
         obstacles_enabled=bool(getattr(args, "obstacles_enabled", False)),

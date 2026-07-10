@@ -85,6 +85,33 @@ class DmpcCoordinatorRosNode(Node):
         self.declare_parameter("d_safe", 0.65)
         self.declare_parameter("formation_margin", 0.15)
         self.declare_parameter("formation_rotation_rad", 0.0)
+        self.declare_parameter("formation_radius_override", 0.0)
+
+        # Explicit-hybrid safety thresholds and hysteresis exposed from NetConfig.
+        # Keep d_agent_exit below the desired formation distance. With the default
+        # two-robot values, d_form = d_safe + formation_margin = 0.80 m, so
+        # d_agent_enter=0.70 and d_agent_exit=0.75 are compatible.
+        self.declare_parameter("safety_warning_radius", 1.20)
+        self.declare_parameter("obstacle_warning_radius", 1.20)
+        self.declare_parameter("d_agent_enter", 0.70)
+        self.declare_parameter("d_agent_exit", 0.75)
+        self.declare_parameter("d_obs_enter", 0.45)
+        self.declare_parameter("d_obs_exit", 0.85)
+
+        # Single-integrator explicit-hybrid gains.
+        self.declare_parameter("modeC_repulsion_gain_si", 0.90)
+        self.declare_parameter("modeO_target_gain_si", 0.95)
+        self.declare_parameter("modeCO_repulsion_gain_si", 0.90)
+        self.declare_parameter("modeCO_target_gain_si", 0.85)
+        self.declare_parameter("nominal_blend_C_si", 0.35)
+        self.declare_parameter("nominal_blend_O_si", 0.20)
+        self.declare_parameter("nominal_blend_CO_si", 0.15)
+
+        # Practical safety-filter margins.
+        self.declare_parameter("pair_filter_margin", 0.04)
+        self.declare_parameter("obs_filter_margin", 0.05)
+        self.declare_parameter("filter_projection_passes", 4)
+
         self.declare_parameter("safety_enabled", True)
         self.declare_parameter("obstacles_enabled", False)
         self.declare_parameter("dt", 0.20)
@@ -153,6 +180,8 @@ class DmpcCoordinatorRosNode(Node):
         self.cmd_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.u_debug_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.pose_debug_publishers: Dict[int, rclpy.publisher.Publisher] = {}
+        self.metrics_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/metrics", 10)
+        self.thresholds_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/safety_thresholds", 10)
         self.odom_subscriptions = []
 
         for agent_id, ns in zip(self.agent_ids, self.robot_namespaces):
@@ -193,6 +222,15 @@ class DmpcCoordinatorRosNode(Node):
             f"robot1=[{self.initial_world_pose_by_agent[1][0]:.3f}, {self.initial_world_pose_by_agent[1][1]:.3f}, {self.initial_world_pose_by_agent[1][2]:.3f}], "
             f"robot2=[{self.initial_world_pose_by_agent[2][0]:.3f}, {self.initial_world_pose_by_agent[2][1]:.3f}, {self.initial_world_pose_by_agent[2][2]:.3f}]"
         )
+        d_form = self._formation_target_distance()
+        self.get_logger().info(
+            f"Safety/formation config: d_safe={self.cfg.d_safe:.3f} m, "
+            f"formation_margin={self.cfg.formation_margin:.3f} m, "
+            f"target_pair_distance={d_form:.3f} m, "
+            f"d_agent_enter={self.cfg.d_agent_enter:.3f} m, "
+            f"d_agent_exit={self.cfg.d_agent_exit:.3f} m, "
+            f"safety_warning_radius={self.cfg.safety_warning_radius:.3f} m"
+        )
         if not self.enable_motion:
             self.get_logger().warn("enable_motion=false: the node will compute commands but publish zero cmd_vel.")
 
@@ -215,6 +253,23 @@ class DmpcCoordinatorRosNode(Node):
             d_safe=float(self.get_parameter("d_safe").value),
             formation_margin=float(self.get_parameter("formation_margin").value),
             formation_rotation_rad=float(self.get_parameter("formation_rotation_rad").value),
+            formation_radius_override=float(self.get_parameter("formation_radius_override").value),
+            safety_warning_radius=float(self.get_parameter("safety_warning_radius").value),
+            obstacle_warning_radius=float(self.get_parameter("obstacle_warning_radius").value),
+            d_agent_enter=float(self.get_parameter("d_agent_enter").value),
+            d_agent_exit=float(self.get_parameter("d_agent_exit").value),
+            d_obs_enter=float(self.get_parameter("d_obs_enter").value),
+            d_obs_exit=float(self.get_parameter("d_obs_exit").value),
+            modeC_repulsion_gain_si=float(self.get_parameter("modeC_repulsion_gain_si").value),
+            modeO_target_gain_si=float(self.get_parameter("modeO_target_gain_si").value),
+            modeCO_repulsion_gain_si=float(self.get_parameter("modeCO_repulsion_gain_si").value),
+            modeCO_target_gain_si=float(self.get_parameter("modeCO_target_gain_si").value),
+            nominal_blend_C_si=float(self.get_parameter("nominal_blend_C_si").value),
+            nominal_blend_O_si=float(self.get_parameter("nominal_blend_O_si").value),
+            nominal_blend_CO_si=float(self.get_parameter("nominal_blend_CO_si").value),
+            pair_filter_margin=float(self.get_parameter("pair_filter_margin").value),
+            obs_filter_margin=float(self.get_parameter("obs_filter_margin").value),
+            filter_projection_passes=int(self.get_parameter("filter_projection_passes").value),
             safety_enabled=bool(self.get_parameter("safety_enabled").value),
             obstacles_enabled=bool(self.get_parameter("obstacles_enabled").value),
             dt=float(self.get_parameter("dt").value),
@@ -321,12 +376,59 @@ class DmpcCoordinatorRosNode(Node):
         for pub in self.cmd_publishers.values():
             pub.publish(zero)
 
+    def _formation_target_distance(self) -> float:
+        """Return the desired pairwise distance for the two-robot formation.
+
+        For n_agents=2 and formation_radius_override=0, this is exactly
+        d_safe + formation_margin. For other cases, it is the distance between
+        the first two formation offsets.
+        """
+        C = self.cfg.formation_offsets()
+        if C.shape[0] >= 2:
+            return float(np.linalg.norm(C[0, :2] - C[1, :2]))
+        return 0.0
+
+    def _publish_two_robot_metrics(self, r_all: np.ndarray) -> None:
+        """Publish simple scalar metrics for bag-based convergence evaluation.
+
+        /dmpc/two_robot/metrics uses Vector3Stamped:
+          x = current inter-robot distance [m]
+          y = desired formation pair distance [m]
+          z = safety margin = distance - d_safe [m]
+
+        /dmpc/two_robot/safety_thresholds uses Vector3Stamped:
+          x = d_safe [m]
+          y = d_agent_enter [m]
+          z = d_agent_exit [m]
+        """
+        if r_all.shape[0] < 2:
+            return
+        distance = float(np.linalg.norm(r_all[0, :2] - r_all[1, :2]))
+        target = self._formation_target_distance()
+
+        metrics = Vector3Stamped()
+        metrics.header.stamp = self.get_clock().now().to_msg()
+        metrics.header.frame_id = self.world_frame
+        metrics.vector.x = distance
+        metrics.vector.y = target
+        metrics.vector.z = distance - float(self.cfg.d_safe)
+        self.metrics_publisher.publish(metrics)
+
+        thresholds = Vector3Stamped()
+        thresholds.header.stamp = metrics.header.stamp
+        thresholds.header.frame_id = self.world_frame
+        thresholds.vector.x = float(self.cfg.d_safe)
+        thresholds.vector.y = float(self.cfg.d_agent_enter)
+        thresholds.vector.z = float(self.cfg.d_agent_exit)
+        self.thresholds_publisher.publish(thresholds)
+
     def control_step(self) -> None:
         if not self._have_fresh_odom():
             self._publish_zero_all()
             return
 
         r_all, v_all, yaw_by_agent = self._state_arrays_from_odom()
+        self._publish_two_robot_metrics(r_all)
         nbrs = self.cfg.neighbors(self.outer_index)
 
         nominal: Dict[int, np.ndarray] = {}

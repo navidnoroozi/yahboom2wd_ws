@@ -518,3 +518,150 @@ source install/setup.bash
 ```
 
 Keep the Raspberry Pis and the Ubuntu VM on the same package version before each hardware experiment.
+
+## Quantitative formation and safety evaluation
+
+The hardware wrapper now exposes the most important `NetConfig` safety and formation parameters from `consensus_config.py` as ROS 2 launch parameters. This makes the hardware test, the simulation test, and the original distributed MPC configuration traceable to the same quantities.
+
+For the current two-robot commissioning setup, the recommended values are:
+
+```text
+n_agents           = 2
+d_safe             = 0.65 m
+formation_margin   = 0.15 m
+formation_rotation = 0.0 rad
+d_agent_enter      = 0.70 m
+d_agent_exit       = 0.75 m
+safety_warning_radius = 1.20 m
+```
+
+For `n_agents = 2` and `formation_radius_override = 0.0`, the desired pair distance is:
+
+```text
+d_form = d_safe + formation_margin = 0.80 m
+```
+
+The corresponding two-agent formation offsets are approximately:
+
+```text
+robot1 desired offset = (+0.40, 0.0) m
+robot2 desired offset = (-0.40, 0.0) m
+```
+
+The safety hysteresis thresholds should be compatible with the target formation. A practical rule for the two-robot setup is:
+
+```text
+d_safe < d_agent_enter < d_agent_exit < d_form
+```
+
+With the recommended values:
+
+```text
+0.65 < 0.70 < 0.75 < 0.80
+```
+
+This prevents the safety mode from fighting the desired formation itself. The earlier unexposed `NetConfig` defaults `d_agent_enter = 0.95` and `d_agent_exit = 1.00` are too large for a two-robot target pair distance of `0.80 m`; therefore these values are now explicitly parameterized for the hardware wrapper.
+
+The coordinator publishes additional quantitative debug topics:
+
+```text
+/dmpc/two_robot/metrics
+/dmpc/two_robot/safety_thresholds
+```
+
+`/dmpc/two_robot/metrics` is a `geometry_msgs/msg/Vector3Stamped`:
+
+```text
+vector.x = current inter-robot distance [m]
+vector.y = desired formation pair distance [m]
+vector.z = safety margin = current distance - d_safe [m]
+```
+
+`/dmpc/two_robot/safety_thresholds` is also a `Vector3Stamped`:
+
+```text
+vector.x = d_safe [m]
+vector.y = d_agent_enter [m]
+vector.z = d_agent_exit [m]
+```
+
+Record these topics in both simulation and hardware bags. They are the easiest way to evaluate whether the robots stay safe and whether the pair distance is converging toward the intended formation distance.
+
+## Parameterized launch example
+
+For a conservative motion-enabled two-robot test:
+
+```bash
+ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
+  robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
+  robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
+  robot1_initial_x:=0.0 \
+  robot1_initial_y:=-0.7 \
+  robot1_initial_yaw:=0.0 \
+  robot2_initial_x:=0.0 \
+  robot2_initial_y:=0.7 \
+  robot2_initial_yaw:=0.0 \
+  max_linear_speed:=0.04 \
+  max_angular_speed:=0.20 \
+  u_bound:=0.04 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  safety_warning_radius:=1.20 \
+  d_agent_enter:=0.70 \
+  d_agent_exit:=0.75 \
+  enable_motion:=true
+```
+
+Add these topics to the bag recorder:
+
+```text
+/dmpc/two_robot/metrics
+/dmpc/two_robot/safety_thresholds
+```
+
+## Simulation counterpart
+
+Use the companion package:
+
+```text
+yahboom_2wd_dmpc_sim
+```
+
+It runs on the Ubuntu VM and simulates the same ROS interface as the two real robots:
+
+```text
+/robot1/cmd_vel -> simulated robot1 -> /robot1/odom
+/robot2/cmd_vel -> simulated robot2 -> /robot2/odom
+```
+
+The simulator deliberately publishes local robot odometry starting near `(0, 0, 0)`, so the existing coordinator's world-frame initialization remains part of the test. This lets the same coordinator and controller nodes be used before the hardware run.
+
+Recommended simulation command:
+
+```bash
+ros2 launch yahboom_2wd_dmpc_sim two_robot_dmpc_sim.launch.py \
+  robot1_initial_x:=0.0 \
+  robot1_initial_y:=-0.7 \
+  robot1_initial_yaw:=0.0 \
+  robot2_initial_x:=0.0 \
+  robot2_initial_y:=0.7 \
+  robot2_initial_yaw:=0.0 \
+  max_linear_speed:=0.04 \
+  max_angular_speed:=0.20 \
+  u_bound:=0.04 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.70 \
+  d_agent_exit:=0.75 \
+  enable_motion:=true
+```
+
+Then compare the simulated and real bags with:
+
+```bash
+ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
+  --bag <bag_folder> \
+  --storage sqlite3 \
+  --d-safe 0.65 \
+  --formation-margin 0.15
+```
