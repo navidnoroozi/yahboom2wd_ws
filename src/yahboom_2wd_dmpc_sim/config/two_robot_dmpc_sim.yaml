@@ -1,0 +1,31 @@
+two_robot_sim_node:
+  ros__parameters:
+    robot_namespaces: ["robot1", "robot2"]
+    rate_hz: 50.0
+    wheel_radius: 0.0325
+    wheel_separation: 0.120
+    encoder_ticks_per_meter: 9000.0
+    cmd_timeout_s: 0.5
+    battery_voltage: 12.0
+    linear_velocity_scale: 1.0
+    angular_velocity_scale: 1.0
+    odom_noise_std_xy: 0.0
+    odom_noise_std_yaw: 0.0
+
+# These values mirror the conservative hardware commissioning values.
+dmpc_defaults:
+  ros__parameters:
+    robot1_initial_x: 0.0
+    robot1_initial_y: -0.7
+    robot1_initial_yaw: 0.0
+    robot2_initial_x: 0.0
+    robot2_initial_y: 0.7
+    robot2_initial_yaw: 0.0
+    max_linear_speed: 0.04
+    max_angular_speed: 0.20
+    u_bound: 0.04
+    d_safe: 0.65
+    formation_margin: 0.15
+    d_agent_enter: 0.70
+    d_agent_exit: 0.75
+    safety_warning_radius: 1.20
