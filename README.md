@@ -956,13 +956,27 @@ ros2 bag record -s mcap \
 
 ## Plotting a recorded bag
 
-Keep `plot_yahboom_bag.py` on the Raspberry Pi:
+The workspace now uses three complementary plotting tools under:
 
 ```text
-~/yahboom2wd_ws/tools/plot_yahboom_bag.py
+~/yahboom2wd_ws/tools/
 ```
-### General pattern for any latest robot1 feedback bag:
-For any feedback test scenario inclduing `straight`, `pure_rotation` etc., run:
+
+Use them at different levels of inspection:
+
+```text
+plot_yahboom_bag.py             -> single-robot plots for one namespace
+plot_yahboom_team_bag.py        -> team-level static plots for robot1 + robot2
+plot_yahboom_team_animation.py  -> team-level motion animation from the bag
+```
+
+The original `plot_yahboom_bag.py` remains useful for detailed per-robot inspection. The new team-level plotters are needed because a two-robot DMPC experiment cannot be evaluated only from individual robot plots. For formation and safety, the important quantities are global/common-frame team quantities such as inter-robot distance, minimum distance to `d_safe`, convergence to the target formation distance, and the relation between `/dmpc/robot*/u_world` and `/robot*/cmd_vel`.
+
+### Single-robot plotting with `plot_yahboom_bag.py`
+
+Use this tool when you want to inspect one robot individually, for example `/robot1/odom`, `/robot1/cmd_vel`, `/robot1/imu/data`, encoder ticks, battery, diagnostics, and rosout messages.
+
+For any latest robot1 feedback bag, run:
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -983,42 +997,234 @@ python3 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py \
   --namespace robot1
 ```
 
-The plotting script should write figures and a summary file into:
+For a two-robot simulation or hardware bag, run the same tool once per robot namespace:
 
-```text
-<bag_folder>/plots/
+```bash
+LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_dmpc_sim_* | head -1)
+
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py \
+  --bag "$LATEST_BAG" \
+  --namespace robot1 \
+  --output-dir "$LATEST_BAG/plots_robot1"
+
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py \
+  --bag "$LATEST_BAG" \
+  --namespace robot2 \
+  --output-dir "$LATEST_BAG/plots_robot2"
 ```
 
-Useful outputs for straight-line calibration:
+For a hardware two-robot bag, use:
+
+```bash
+LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_dmpc_motion_* | head -1)
+```
+
+The single-robot plotter writes figures and a summary file into the selected output directory. Useful outputs include:
 
 ```text
 summary.txt
 cmd_vel_timeseries.png
 odom_xy.png
+odom_pose_timeseries.png
 odom_twist_timeseries.png
 encoder_delta_ticks.png
 imu_angular_velocity.png
 ```
 
-For feedback path-following bags, also inspect the reference and tracking-error signals. If the plotting script has not yet been extended for those topics, use `ros2 bag info`, `ros2 topic echo` during live tests, or extend the plotter to read:
+Some hardware-only plots such as encoder ticks, battery voltage, IMU, or diagnostics may be missing in a simulation bag. That is normal because the simulator is intentionally focused on the ROS motion interface.
+
+### Team-level static plotting with `plot_yahboom_team_bag.py`
+
+Use this tool for the holistic DMPC evaluation of the team. It reads the common world-frame topics and team metrics from the same ROS 2 bag:
 
 ```text
-/robot1/path_test/reference_pose
-/robot1/path_test/tracking_error
+/dmpc/robot1/pose_world
+/dmpc/robot2/pose_world
+/dmpc/robot1/u_world
+/dmpc/robot2/u_world
+/dmpc/two_robot/metrics
+/dmpc/two_robot/safety_thresholds
+/robot1/cmd_vel
+/robot2/cmd_vel
 ```
 
-For calibration and path-following validation, compare:
+It also uses `two_robot_dmpc_analysis.csv` if that file already exists in the bag directory. If the CSV is missing, it computes the most important pairwise metrics directly from `/dmpc/robot*/pose_world`.
+
+For the latest simulation bag, run:
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_dmpc_sim_* | head -1)
+
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_bag.py \
+  --bag "$LATEST_BAG" \
+  --namespaces robot1 robot2 \
+  --storage-id auto \
+  --d-safe 0.65 \
+  --formation-margin 0.15 \
+  --d-agent-enter 0.70 \
+  --d-agent-exit 0.75
+```
+
+For the latest hardware motion-enabled bag, use:
+
+```bash
+LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_dmpc_motion_* | head -1)
+
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_bag.py \
+  --bag "$LATEST_BAG" \
+  --namespaces robot1 robot2 \
+  --storage-id auto \
+  --d-safe 0.65 \
+  --formation-margin 0.15 \
+  --d-agent-enter 0.70 \
+  --d-agent-exit 0.75
+```
+
+The team plotter writes its results into:
 
 ```text
-physical tape distance
-integrated commanded distance
-final odom displacement
-reference trajectory versus odometry trajectory
-lateral/cross-track error
-heading error
-encoder tick deltas of M2 and M4
-average odom speed
+<bag_folder>/team_plots/
 ```
+
+Typical outputs are:
+
+```text
+team_summary.txt
+team_world_trajectories.png
+team_world_position_timeseries.png
+team_inter_robot_distance.png
+team_safety_margin.png
+team_formation_distance_error.png
+team_u_world_timeseries.png
+team_cmd_vel_timeseries.png
+team_analysis_csv_distance_comparison.png
+```
+
+For the current two-robot configuration, the most important quantitative values are:
+
+```text
+d_safe              = 0.65 m
+formation_margin    = 0.15 m
+target pair distance = d_safe + formation_margin = 0.80 m
+d_agent_enter       = 0.70 m
+d_agent_exit        = 0.75 m
+```
+
+The team-level pass/fail criteria are:
+
+```text
+minimum inter-robot distance > d_safe
+minimum safety margin = distance - d_safe > 0
+final inter-robot distance close to 0.80 m
+formation-distance error decreases or remains small
+both robots receive bounded and smooth cmd_vel commands
+both robots stop when the coordinator stops
+```
+
+### Team-level animation with `plot_yahboom_team_animation.py`
+
+Use this tool to create a GIF of the team motion. It visualizes the robot positions in the common world frame, heading arrows, trajectory trails, the line between robots, and safety/formation metrics over time.
+
+For the latest simulation bag:
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_dmpc_sim_* | head -1)
+
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
+  --bag "$LATEST_BAG" \
+  --namespaces robot1 robot2 \
+  --storage-id auto \
+  --d-safe 0.65 \
+  --formation-margin 0.15 \
+  --fps 8 \
+  --step 1 \
+  --max-frames 600
+```
+
+For the latest hardware bag:
+
+```bash
+LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_dmpc_motion_* | head -1)
+
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
+  --bag "$LATEST_BAG" \
+  --namespaces robot1 robot2 \
+  --storage-id auto \
+  --d-safe 0.65 \
+  --formation-margin 0.15 \
+  --fps 8 \
+  --step 1 \
+  --max-frames 600
+```
+
+The animation is written to:
+
+```text
+<bag_folder>/team_animation/team_motion.gif
+```
+
+If the GIF becomes too large, increase `--step` or reduce `--max-frames`, for example:
+
+```bash
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
+  --bag "$LATEST_BAG" \
+  --namespaces robot1 robot2 \
+  --step 3 \
+  --max-frames 300
+```
+
+### Recommended complete post-processing order for a two-robot run
+
+After each two-robot simulation or hardware experiment, run:
+
+```bash
+# 1) Analyze quantitative pairwise safety/formation metrics.
+ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
+  --bag "$LATEST_BAG" \
+  --storage sqlite3 \
+  --d-safe 0.65 \
+  --formation-margin 0.15
+
+# 2) Plot robot1 individually.
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py \
+  --bag "$LATEST_BAG" \
+  --namespace robot1 \
+  --output-dir "$LATEST_BAG/plots_robot1"
+
+# 3) Plot robot2 individually.
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_bag.py \
+  --bag "$LATEST_BAG" \
+  --namespace robot2 \
+  --output-dir "$LATEST_BAG/plots_robot2"
+
+# 4) Plot team-level DMPC behavior.
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_bag.py \
+  --bag "$LATEST_BAG" \
+  --namespaces robot1 robot2 \
+  --d-safe 0.65 \
+  --formation-margin 0.15 \
+  --d-agent-enter 0.70 \
+  --d-agent-exit 0.75
+
+# 5) Create team-level animation.
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
+  --bag "$LATEST_BAG" \
+  --namespaces robot1 robot2 \
+  --d-safe 0.65 \
+  --formation-margin 0.15
+```
+
+Use the individual plots to debug each robot. Use the team plots and animation to decide whether the distributed MPC experiment achieved safe formation behavior.
 
 ## Development roadmap after `robot1`
 
