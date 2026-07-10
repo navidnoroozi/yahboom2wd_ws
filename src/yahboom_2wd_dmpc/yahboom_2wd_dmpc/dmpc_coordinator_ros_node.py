@@ -128,6 +128,23 @@ class DmpcCoordinatorRosNode(Node):
         self.declare_parameter("stop_for_heading_error_rad", 1.20)
         self.declare_parameter("allow_reverse", False)
 
+        # Formation hold/deadband layer.  This is a practical hardware layer on
+        # the VM-side coordinator.  Once the team is inside the configured
+        # formation error band, the coordinator suppresses translational motion
+        # and optionally commands only an in-place heading correction so that the
+        # robots face each other.  This reduces hunting around the final
+        # formation caused by wheel slip, odometry drift, actuator dead zones and
+        # small nonzero MPC commands.
+        self.declare_parameter("formation_hold_enabled", True)
+        self.declare_parameter("formation_hold_metric", "pairwise")  # pairwise, slot, or both
+        self.declare_parameter("formation_hold_enter_error", 0.04)
+        self.declare_parameter("formation_hold_exit_error", 0.08)
+        self.declare_parameter("formation_hold_min_steps", 2)
+        self.declare_parameter("formation_hold_heading_enabled", True)
+        self.declare_parameter("formation_hold_heading_gain", 1.0)
+        self.declare_parameter("formation_hold_max_angular_speed", 0.12)
+        self.declare_parameter("formation_hold_heading_tolerance_rad", 0.10)
+
         self.robot_namespaces = [str(x).strip("/") for x in self.get_parameter("robot_namespaces").value]
         self.agent_ids = [int(x) for x in self.get_parameter("agent_ids").value]
         # Prefer scalar endpoint parameters to avoid ROS 2 Humble launch substitution
@@ -174,6 +191,31 @@ class DmpcCoordinatorRosNode(Node):
         self.stop_for_heading_error_rad = float(self.get_parameter("stop_for_heading_error_rad").value)
         self.allow_reverse = bool(self.get_parameter("allow_reverse").value)
 
+        self.formation_hold_enabled = bool(self.get_parameter("formation_hold_enabled").value)
+        self.formation_hold_metric = str(self.get_parameter("formation_hold_metric").value).strip().lower()
+        if self.formation_hold_metric not in {"pairwise", "slot", "both"}:
+            self.get_logger().warn(
+                f"Unsupported formation_hold_metric='{self.formation_hold_metric}'. Falling back to 'pairwise'."
+            )
+            self.formation_hold_metric = "pairwise"
+        self.formation_hold_enter_error = float(self.get_parameter("formation_hold_enter_error").value)
+        self.formation_hold_exit_error = float(self.get_parameter("formation_hold_exit_error").value)
+        if self.formation_hold_exit_error < self.formation_hold_enter_error:
+            self.get_logger().warn(
+                "formation_hold_exit_error is smaller than formation_hold_enter_error; "
+                "setting exit equal to enter to avoid hold-state chatter."
+            )
+            self.formation_hold_exit_error = self.formation_hold_enter_error
+        self.formation_hold_min_steps = max(1, int(self.get_parameter("formation_hold_min_steps").value))
+        self.formation_hold_heading_enabled = bool(self.get_parameter("formation_hold_heading_enabled").value)
+        self.formation_hold_heading_gain = float(self.get_parameter("formation_hold_heading_gain").value)
+        self.formation_hold_max_angular_speed = float(self.get_parameter("formation_hold_max_angular_speed").value)
+        self.formation_hold_heading_tolerance_rad = float(
+            self.get_parameter("formation_hold_heading_tolerance_rad").value
+        )
+        self._formation_hold_active = False
+        self._formation_hold_candidate_steps = 0
+
         self.odom_by_agent: Dict[int, Odometry] = {}
         self.odom_time_by_agent: Dict[int, rclpy.time.Time] = {}
 
@@ -182,6 +224,7 @@ class DmpcCoordinatorRosNode(Node):
         self.pose_debug_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.metrics_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/metrics", 10)
         self.thresholds_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/safety_thresholds", 10)
+        self.hold_state_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/hold_state", 10)
         self.odom_subscriptions = []
 
         for agent_id, ns in zip(self.agent_ids, self.robot_namespaces):
@@ -230,6 +273,14 @@ class DmpcCoordinatorRosNode(Node):
             f"d_agent_enter={self.cfg.d_agent_enter:.3f} m, "
             f"d_agent_exit={self.cfg.d_agent_exit:.3f} m, "
             f"safety_warning_radius={self.cfg.safety_warning_radius:.3f} m"
+        )
+        self.get_logger().info(
+            f"Formation hold/deadband: enabled={self.formation_hold_enabled}, "
+            f"metric={self.formation_hold_metric}, "
+            f"enter_error={self.formation_hold_enter_error:.3f} m, "
+            f"exit_error={self.formation_hold_exit_error:.3f} m, "
+            f"min_steps={self.formation_hold_min_steps}, "
+            f"heading_enabled={self.formation_hold_heading_enabled}"
         )
         if not self.enable_motion:
             self.get_logger().warn("enable_motion=false: the node will compute commands but publish zero cmd_vel.")
@@ -422,6 +473,146 @@ class DmpcCoordinatorRosNode(Node):
         thresholds.vector.z = float(self.cfg.d_agent_exit)
         self.thresholds_publisher.publish(thresholds)
 
+    def _formation_error_metrics(self, r_all: np.ndarray) -> dict:
+        """Compute formation errors used by the hold/deadband layer.
+
+        Pairwise error compares all actual pair distances with the distances
+        between the corresponding formation offsets.  For two robots this is
+        exactly the absolute error between the measured pair distance and the
+        desired safe-formation pair distance.
+
+        Slot error compares each robot position against its assigned formation
+        slot, i.e. barycenter + c_i.  This is stricter because it also enforces
+        the orientation/labeling of the formation.
+        """
+        if r_all.shape[0] == 0:
+            return {"pairwise": 0.0, "slot": 0.0, "selected": 0.0}
+
+        C = self.cfg.formation_offsets()[: r_all.shape[0], :2]
+        pts = r_all[:, :2]
+
+        pair_errors = []
+        for i in range(pts.shape[0]):
+            for j in range(i + 1, pts.shape[0]):
+                desired = float(np.linalg.norm(C[i, :2] - C[j, :2]))
+                actual = float(np.linalg.norm(pts[i, :2] - pts[j, :2]))
+                pair_errors.append(abs(actual - desired))
+        max_pair_error = float(max(pair_errors)) if pair_errors else 0.0
+
+        bary = np.mean(pts, axis=0)
+        desired_slots = bary + C
+        slot_errors = np.linalg.norm(pts - desired_slots, axis=1)
+        max_slot_error = float(np.max(slot_errors)) if slot_errors.size else 0.0
+
+        if self.formation_hold_metric == "slot":
+            selected = max_slot_error
+        elif self.formation_hold_metric == "both":
+            selected = max(max_pair_error, max_slot_error)
+        else:
+            selected = max_pair_error
+
+        return {
+            "pairwise": max_pair_error,
+            "slot": max_slot_error,
+            "selected": float(selected),
+        }
+
+    def _publish_formation_hold_state(self, active: bool, errors: dict) -> None:
+        """Publish hold/deadband state for bag-based diagnostics.
+
+        /dmpc/two_robot/hold_state uses Vector3Stamped:
+          x = 1.0 if hold is active, otherwise 0.0
+          y = selected hold error [m]
+          z = max pairwise formation-distance error [m]
+        """
+        msg = Vector3Stamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.world_frame
+        msg.vector.x = 1.0 if active else 0.0
+        msg.vector.y = float(errors.get("selected", 0.0))
+        msg.vector.z = float(errors.get("pairwise", 0.0))
+        self.hold_state_publisher.publish(msg)
+
+    def _update_formation_hold_state(self, r_all: np.ndarray) -> tuple[bool, dict]:
+        """Update the hold/deadband latch with hysteresis."""
+        errors = self._formation_error_metrics(r_all)
+        selected_error = float(errors["selected"])
+
+        if not self.formation_hold_enabled:
+            self._formation_hold_active = False
+            self._formation_hold_candidate_steps = 0
+            self._publish_formation_hold_state(False, errors)
+            return False, errors
+
+        if self._formation_hold_active:
+            if selected_error > self.formation_hold_exit_error:
+                self._formation_hold_active = False
+                self._formation_hold_candidate_steps = 0
+                self.get_logger().info(
+                    f"Formation hold released: error={selected_error:.3f} m > "
+                    f"exit={self.formation_hold_exit_error:.3f} m",
+                    throttle_duration_sec=1.0,
+                )
+        else:
+            if selected_error <= self.formation_hold_enter_error:
+                self._formation_hold_candidate_steps += 1
+                if self._formation_hold_candidate_steps >= self.formation_hold_min_steps:
+                    self._formation_hold_active = True
+                    self.get_logger().info(
+                        f"Formation hold entered: error={selected_error:.3f} m <= "
+                        f"enter={self.formation_hold_enter_error:.3f} m"
+                    )
+            else:
+                self._formation_hold_candidate_steps = 0
+
+        self._publish_formation_hold_state(self._formation_hold_active, errors)
+        return self._formation_hold_active, errors
+
+    def _desired_hold_heading(self, row: int, r_all: np.ndarray, current_yaw: float) -> float:
+        """Desired yaw during hold mode.
+
+        For two robots, face the other robot.  For more than two robots, face the
+        formation barycenter.  If the target direction is numerically ill-defined,
+        keep the current yaw.
+        """
+        pts = r_all[:, :2]
+        own = pts[row, :]
+        if pts.shape[0] == 2:
+            other = pts[1 - row, :]
+            vec = other - own
+        else:
+            bary = np.mean(pts, axis=0)
+            vec = bary - own
+        if float(np.linalg.norm(vec)) < 1e-9:
+            return current_yaw
+        return math.atan2(float(vec[1]), float(vec[0]))
+
+    def _publish_hold_command(self, agent_id: int, row: int, r_all: np.ndarray, yaw: float) -> None:
+        """Hold the robot in place and optionally correct heading in place."""
+        debug = Vector3Stamped()
+        debug.header.stamp = self.get_clock().now().to_msg()
+        debug.header.frame_id = self.world_frame
+        debug.vector.x = 0.0
+        debug.vector.y = 0.0
+        debug.vector.z = 0.0
+        self.u_debug_publishers[agent_id].publish(debug)
+
+        cmd = Twist()
+        if self.enable_motion and self.formation_hold_heading_enabled:
+            desired_yaw = self._desired_hold_heading(row, r_all, yaw)
+            heading_error = normalize_angle(desired_yaw - yaw)
+            if abs(heading_error) > self.formation_hold_heading_tolerance_rad:
+                cmd.angular.z = float(
+                    clamp(
+                        self.formation_hold_heading_gain * heading_error,
+                        -self.formation_hold_max_angular_speed,
+                        self.formation_hold_max_angular_speed,
+                    )
+                )
+        # No translation in hold mode.
+        cmd.linear.x = 0.0
+        self.cmd_publishers[agent_id].publish(cmd)
+
     def control_step(self) -> None:
         if not self._have_fresh_odom():
             self._publish_zero_all()
@@ -429,6 +620,21 @@ class DmpcCoordinatorRosNode(Node):
 
         r_all, v_all, yaw_by_agent = self._state_arrays_from_odom()
         self._publish_two_robot_metrics(r_all)
+
+        hold_active, hold_errors = self._update_formation_hold_state(r_all)
+        if hold_active:
+            self.get_logger().info(
+                f"Formation hold active: selected_error={hold_errors['selected']:.3f} m, "
+                f"pairwise_error={hold_errors['pairwise']:.3f} m, "
+                f"slot_error={hold_errors['slot']:.3f} m. Publishing zero translation.",
+                throttle_duration_sec=2.0,
+            )
+            for row, agent_id in enumerate(self.agent_ids):
+                self.u_prev[agent_id] = np.zeros((self.cfg.dim,), dtype=float)
+                self._publish_hold_command(agent_id, row, r_all, yaw_by_agent[agent_id])
+            self.outer_index += 1
+            return
+
         nbrs = self.cfg.neighbors(self.outer_index)
 
         nominal: Dict[int, np.ndarray] = {}

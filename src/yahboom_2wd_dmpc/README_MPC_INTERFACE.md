@@ -384,10 +384,43 @@ ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   max_linear_speed:=0.04 \
   max_angular_speed:=0.20 \
   u_bound:=0.04 \
+  formation_hold_enabled:=true \
+  formation_hold_metric:=pairwise \
+  formation_hold_enter_error:=0.04 \
+  formation_hold_exit_error:=0.08 \
+  formation_hold_heading_enabled:=true \
+  formation_hold_max_angular_speed:=0.12 \
   enable_motion:=true
 ```
 
 This is intentionally slower than the default commissioning values. If the motion is smooth and the bag looks correct, repeat with the default values.
+
+### Formation hold / deadband layer
+
+The coordinator contains a practical formation-hold layer for real hardware.  When the team is already inside the configured formation error band, the coordinator suppresses translational commands and optionally publishes only an in-place angular command so that the two robots face each other.
+
+Default hold parameters:
+
+```text
+formation_hold_enabled: true
+formation_hold_metric: pairwise        # pairwise, slot, or both
+formation_hold_enter_error: 0.04 m     # enter hold below 4 cm selected formation error
+formation_hold_exit_error: 0.08 m      # leave hold above 8 cm selected formation error
+formation_hold_min_steps: 2
+formation_hold_heading_enabled: true
+formation_hold_max_angular_speed: 0.12 rad/s
+formation_hold_heading_tolerance_rad: 0.10 rad
+```
+
+For the two-robot hardware tests, `formation_hold_metric:=pairwise` is recommended first because it matches the bag-analysis metric `abs(inter_robot_distance - target_pair_distance)`.  Use `formation_hold_metric:=slot` or `both` only when you want to enforce the assigned labeled formation slots and formation orientation more strictly.
+
+The hold state is published on:
+
+```text
+/dmpc/two_robot/hold_state
+```
+
+where `vector.x = 1.0` means hold mode is active, `vector.y` is the selected hold error, and `vector.z` is the pairwise formation-distance error.
 
 Record a bag before starting the motion-enabled coordinator:
 
@@ -402,6 +435,7 @@ ros2 bag record -s mcap \
   /dmpc/robot2/pose_world \
   /dmpc/robot1/u_world \
   /dmpc/robot2/u_world \
+  /dmpc/two_robot/hold_state \
   /robot1/diagnostics \
   /robot2/diagnostics \
   /rosout \

@@ -35,8 +35,8 @@ dmpc_coordinator_ros_node:
     # Explicit-hybrid safety thresholds and hysteresis.
     safety_warning_radius: 1.20
     obstacle_warning_radius: 1.20
-    d_agent_enter: 0.70
-    d_agent_exit: 0.75
+    d_agent_enter: 0.68
+    d_agent_exit: 0.72
     d_obs_enter: 0.45
     d_obs_exit: 0.85
 
@@ -69,3 +69,18 @@ dmpc_coordinator_ros_node:
     linear_deadband: 0.005
     stop_for_heading_error_rad: 1.20
     allow_reverse: false
+
+    # Formation hold/deadband layer on the VM-side coordinator.
+    # Once the selected formation error is inside enter_error for
+    # formation_hold_min_steps consecutive control ticks, the coordinator
+    # suppresses all translational motion.  If heading correction is enabled,
+    # robots may still rotate in place to face each other.
+    formation_hold_enabled: true
+    formation_hold_metric: "pairwise"     # pairwise, slot, or both
+    formation_hold_enter_error: 0.04      # enter hold if selected error <= 4 cm
+    formation_hold_exit_error: 0.08       # leave hold if selected error > 8 cm
+    formation_hold_min_steps: 2
+    formation_hold_heading_enabled: true
+    formation_hold_heading_gain: 1.0
+    formation_hold_max_angular_speed: 0.12
+    formation_hold_heading_tolerance_rad: 0.10
