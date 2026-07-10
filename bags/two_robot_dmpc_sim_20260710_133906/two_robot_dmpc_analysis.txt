@@ -1,0 +1,15 @@
+Two-robot DMPC bag analysis
+bag: /home/navid/yahboom2wd_ws/bags/two_robot_dmpc_sim_20260710_133906
+samples: 1630
+d_safe: 0.6500 m
+formation_margin: 0.1500 m
+target pair distance for n=2: 0.8000 m
+initial distance: 1.4000 m
+final distance: 0.7899 m
+final absolute formation-distance error: 0.0101 m
+min distance: 0.7848 m
+max distance: 1.4000 m
+minimum safety margin distance-d_safe: 0.1348 m
+robot1 nonzero cmd_vel samples: 133 / 234
+robot2 nonzero cmd_vel samples: 133 / 234
+/dmpc/two_robot/metrics samples: 233

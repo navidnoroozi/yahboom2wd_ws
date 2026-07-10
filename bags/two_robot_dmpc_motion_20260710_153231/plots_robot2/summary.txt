@@ -1,0 +1,180 @@
+Yahboom 2WD bag summary
+=======================
+
+bag_path: /home/navid/yahboom2wd_ws/bags/two_robot_dmpc_motion_20260710_153231
+storage_id: sqlite3
+namespace: robot2
+
+Selected topics:
+  cmd_vel     : /robot2/cmd_vel
+  odom        : /robot2/odom
+  imu         : /robot2/imu/data
+  battery     : not found
+  encoders    : /robot2/encoder_ticks
+  diagnostics : /robot2/diagnostics
+  rosout      : /rosout
+
+Message counts:
+  /robot2/cmd_vel: 119
+  /robot2/diagnostics: 85
+  /robot2/encoder_ticks: 2607
+  /robot2/imu/data: 2607
+  /robot2/odom: 2607
+  /rosout: 50
+
+Command summary:
+  cmd duration from bag samples: 57.905 s
+  average cmd linear.x: 0.0280 m/s
+  integrated commanded distance: 1.6436 m
+
+Odometry summary:
+  final dx: -0.2407 m
+  final dy: -0.8012 m
+  final displacement: 0.8365 m
+  path length: 2.2089 m
+  average odom speed: 0.0254 m/s
+
+Encoder delta summary:
+  M1 delta: 0 ticks
+  M2 delta: 13091 ticks
+  M3 delta: 0 ticks
+  M4 delta: 19133 ticks
+
+Rosout messages:
+       0.000 s [20] rosbag2_recorder: Press SPACE for pausing/resuming
+       0.000 s [20] rosbag2_recorder: Listening for topics...
+       0.000 s [20] rosbag2_recorder: Event publisher thread: Starting
+       0.000 s [20] rosbag2_recorder: Subscribed to topic '/tf'
+       0.000 s [20] rosbag2_recorder: Subscribed to topic '/rosout'
+       0.000 s [20] rosbag2_recorder: Subscribed to topic '/robot2/odom'
+       0.000 s [20] rosbag2_recorder: Subscribed to topic '/robot2/imu/data'
+       0.001 s [20] rosbag2_recorder: Subscribed to topic '/robot2/encoder_ticks'
+       0.001 s [20] rosbag2_recorder: Subscribed to topic '/robot2/diagnostics'
+       0.001 s [20] rosbag2_recorder: Recording...
+       0.004 s [20] rosbag2_recorder: Subscribed to topic '/robot1/diagnostics'
+       0.005 s [20] rosbag2_recorder: Subscribed to topic '/robot1/encoder_ticks'
+       0.006 s [20] rosbag2_recorder: Subscribed to topic '/tf_static'
+       0.007 s [20] rosbag2_recorder: Subscribed to topic '/robot1/imu/data'
+       0.012 s [20] rosbag2_recorder: Subscribed to topic '/robot1/odom'
+      11.513 s [20] dmpc_coordinator_ros_node: REQ -> controller for agent 1: tcp://192.168.178.87:5601
+      11.513 s [20] dmpc_coordinator_ros_node: REQ -> controller for agent 2: tcp://192.168.178.94:5602
+      11.514 s [20] dmpc_coordinator_ros_node: DMPC coordinator started for namespaces=['robot1', 'robot2'], agent_ids=[1, 2], enable_motion=True, model=single_integrator, n_agents=2, M=5
+      11.515 s [20] dmpc_coordinator_ros_node: World-frame initialization: frame=map, robot1=[0.000, -0.700, 0.000], robot2=[0.000, 0.700, 0.000]
+      11.516 s [20] dmpc_coordinator_ros_node: Safety/formation config: d_safe=0.650 m, formation_margin=0.150 m, target_pair_distance=0.800 m, d_agent_enter=0.700 m, d_agent_exit=0.750 m, safety_warning_radius=1.200 m
+      11.545 s [20] rosbag2_recorder: Subscribed to topic '/robot2/cmd_vel'
+      11.549 s [20] rosbag2_recorder: Subscribed to topic '/robot1/cmd_vel'
+      11.552 s [20] rosbag2_recorder: Subscribed to topic '/dmpc/two_robot/safety_thresholds'
+      11.552 s [20] rosbag2_recorder: Subscribed to topic '/dmpc/two_robot/metrics'
+      11.554 s [20] rosbag2_recorder: Subscribed to topic '/dmpc/robot2/u_world'
+      11.557 s [20] rosbag2_recorder: Subscribed to topic '/dmpc/robot2/pose_world'
+      11.558 s [20] rosbag2_recorder: Subscribed to topic '/dmpc/robot1/u_world'
+      11.562 s [20] rosbag2_recorder: Subscribed to topic '/dmpc/robot1/pose_world'
+      11.562 s [20] rosbag2_recorder: All requested topics are subscribed. Stopping discovery...
+      15.239 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      15.241 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      21.607 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      21.607 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      23.673 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      28.573 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      28.573 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      34.938 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      34.940 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      41.306 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      41.308 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      47.771 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      47.774 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      54.639 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      54.640 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      60.972 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      60.973 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      67.273 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      67.275 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      70.747 s [30] robot2.yahboom_2wd_node: cmd_vel timeout; stopping robot
+      71.206 s [30] robot1.yahboom_2wd_node: cmd_vel timeout; stopping robot
+
+Diagnostic messages:
+       0.608 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       1.643 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       2.640 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       3.641 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       4.675 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       5.677 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       6.708 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       7.710 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       8.742 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+       9.775 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      10.808 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      11.809 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      12.845 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      13.877 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      14.877 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      15.878 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      16.912 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      17.917 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      18.912 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      19.942 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      20.944 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      21.976 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      23.010 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      24.010 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      25.009 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      26.011 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      27.044 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      28.046 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      29.076 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      30.077 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      31.078 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      32.112 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      33.144 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      34.144 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      35.178 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      36.178 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      37.209 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      38.243 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      39.279 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      40.277 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      41.314 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      42.309 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      43.310 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      44.315 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      45.344 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      46.343 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      47.344 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      48.377 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      49.378 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      50.410 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      51.411 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      52.412 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      53.443 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      54.445 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      55.443 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      56.475 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      57.514 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      58.543 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      59.579 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      60.610 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      61.644 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      62.677 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      63.679 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      64.709 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      65.742 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      66.744 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      67.779 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      68.779 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      69.810 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      70.842 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      71.875 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      72.875 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      73.910 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      74.909 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      75.909 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      76.909 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      77.909 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      78.942 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      79.977 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      81.008 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      82.010 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      83.044 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      84.043 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      85.075 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
+      86.108 s [0] yahboom_2wd_node: Yahboom ROS control board: OK
