@@ -10,6 +10,9 @@ bag and plots the overall team behavior:
   /dmpc/robot1/u_world,    /dmpc/robot2/u_world
   /dmpc/two_robot/metrics
   /dmpc/two_robot/safety_thresholds
+  /dmpc/two_robot/hold_state
+  /dmpc/two_robot/obstacle_thresholds
+  /dmpc/robot1/obstacle_metrics, /dmpc/robot2/obstacle_metrics
   /robot1/cmd_vel,         /robot2/cmd_vel
 
 It supports sqlite3 and mcap bags and auto-detects the storage backend.
@@ -27,6 +30,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 import numpy as np
 
 import rosbag2_py
@@ -241,6 +245,71 @@ def savefig(outdir: pathlib.Path, name: str) -> None:
     print(f"Saved: {out}")
 
 
+def _as_np(data: List[float]) -> np.ndarray:
+    return np.asarray(data, dtype=float)
+
+
+def _topic_has_samples(series_by_ns: Dict[str, Dict[str, List[float]]], key: str = "t") -> bool:
+    return any(len(series.get(key, [])) > 0 for series in series_by_ns.values())
+
+
+def should_show_obstacle(mode: str, obstacle_data_available: bool) -> bool:
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    return obstacle_data_available
+
+
+def draw_obstacle_on_axes(ax, center_x: float, center_y: float, radius: float, margin: float) -> None:
+    inflated = max(0.0, float(radius) + float(margin))
+    physical = Circle((center_x, center_y), radius=max(0.0, float(radius)), fill=False, linestyle="-", linewidth=1.8, alpha=0.9, label="physical obstacle")
+    inflated_patch = Circle((center_x, center_y), radius=inflated, fill=False, linestyle="--", linewidth=1.8, alpha=0.9, label="inflated obstacle")
+    ax.add_patch(inflated_patch)
+    ax.add_patch(physical)
+    ax.plot([center_x], [center_y], marker="x", markersize=8, label="obstacle center")
+    ax.text(center_x, center_y, f" obstacle\nr={radius:.2f}, margin={margin:.2f}", ha="left", va="bottom")
+
+
+def append_extra_summary(outdir: pathlib.Path, hold_data: Dict[str, List[float]], obstacle_metrics_by_ns: Dict[str, Dict[str, List[float]]], obstacle_threshold_data: Dict[str, List[float]], obstacle_config: Dict[str, float]) -> None:
+    out = outdir / "team_summary.txt"
+    with out.open("a", encoding="utf-8") as f:
+        f.write("\nHold-zone metrics:\n")
+        if hold_data["t"]:
+            active = _as_np(hold_data["active"])
+            f.write(f"  hold_state samples: {active.size}\n")
+            f.write(f"  hold active samples: {int(np.count_nonzero(active > 0.5))} / {active.size}\n")
+            f.write(f"  final hold active: {bool(active[-1] > 0.5)}\n")
+            f.write(f"  final selected hold error: {hold_data['selected_error'][-1]:.4f} m\n")
+            f.write(f"  final pairwise hold error: {hold_data['pair_error'][-1]:.4f} m\n")
+        else:
+            f.write("  /dmpc/two_robot/hold_state was not recorded.\n")
+
+        f.write("\nObstacle configuration used for plots:\n")
+        for key, val in obstacle_config.items():
+            f.write(f"  {key}: {val:.4f}\n")
+        f.write(f"  inflated_radius: {obstacle_config['obstacle_radius'] + obstacle_config['obstacle_margin']:.4f}\n")
+
+        if obstacle_threshold_data["t"]:
+            f.write("\nObstacle thresholds from last bag sample:\n")
+            f.write(f"  d_obs_enter: {obstacle_threshold_data['d_obs_enter'][-1]:.4f} m\n")
+            f.write(f"  d_obs_exit: {obstacle_threshold_data['d_obs_exit'][-1]:.4f} m\n")
+            f.write(f"  obstacle_warning_radius: {obstacle_threshold_data['warning'][-1]:.4f} m\n")
+
+        f.write("\nObstacle metrics:\n")
+        any_obs = False
+        for ns, data in obstacle_metrics_by_ns.items():
+            if not data["t"]:
+                continue
+            any_obs = True
+            clearance = _as_np(data["clearance"])
+            active = _as_np(data["active"])
+            f.write(f"  {ns}: samples={clearance.size}, min_clearance={np.nanmin(clearance):.4f} m, final_clearance={clearance[-1]:.4f} m, active_samples={int(np.count_nonzero(active > 0.5))} / {active.size}\n")
+        if not any_obs:
+            f.write("  obstacle metrics topics were not recorded.\n")
+    print(f"Updated: {out}")
+
+
 def write_summary(outdir: pathlib.Path, bag_path: pathlib.Path, storage_id: str, namespaces: List[str], metrics: Dict[str, np.ndarray], counts: Counter, d_safe: float, d_agent_enter: float, d_agent_exit: float, target_distance: float, used_analysis_csv: Optional[pathlib.Path]) -> None:
     distance = metrics["distance"]
     margin = metrics["margin"]
@@ -284,6 +353,13 @@ def main() -> None:
     parser.add_argument("--formation-margin", type=float, default=0.15)
     parser.add_argument("--d-agent-enter", type=float, default=0.70)
     parser.add_argument("--d-agent-exit", type=float, default=0.75)
+    parser.add_argument("--formation-hold-enter-error", type=float, default=0.04, help="Hold-zone entry error threshold used for plotting.")
+    parser.add_argument("--formation-hold-exit-error", type=float, default=0.08, help="Hold-zone exit error threshold used for plotting.")
+    parser.add_argument("--show-obstacle", choices=["auto", "always", "never"], default="auto", help="Draw obstacle geometry in XY plots. 'auto' draws it when obstacle metrics or thresholds are present.")
+    parser.add_argument("--obstacle-center-x", type=float, default=1.0)
+    parser.add_argument("--obstacle-center-y", type=float, default=-0.33)
+    parser.add_argument("--obstacle-radius", type=float, default=0.15)
+    parser.add_argument("--obstacle-margin", type=float, default=0.10)
     args = parser.parse_args()
 
     bag_path = expand_path(args.bag)
@@ -311,6 +387,11 @@ def main() -> None:
 
     metrics_topic = choose_existing_topic(type_map, ["/dmpc/two_robot/metrics"], "geometry_msgs/msg/Vector3Stamped")
     thresholds_topic = choose_existing_topic(type_map, ["/dmpc/two_robot/safety_thresholds"], "geometry_msgs/msg/Vector3Stamped")
+    hold_topic = choose_existing_topic(type_map, ["/dmpc/two_robot/hold_state"], "geometry_msgs/msg/Vector3Stamped")
+    obstacle_thresholds_topic = choose_existing_topic(type_map, ["/dmpc/two_robot/obstacle_thresholds"], "geometry_msgs/msg/Vector3Stamped")
+    obstacle_metrics_topics: Dict[str, Optional[str]] = {}
+    for ns in namespaces:
+        obstacle_metrics_topics[ns] = choose_existing_topic(type_map, [f"/dmpc/{ns}/obstacle_metrics"], "geometry_msgs/msg/Vector3Stamped")
 
     selected_topics = set()
     for d in [pose_topics, odom_topics, u_topics, cmd_topics]:
@@ -319,6 +400,11 @@ def main() -> None:
         selected_topics.add(metrics_topic)
     if thresholds_topic:
         selected_topics.add(thresholds_topic)
+    if hold_topic:
+        selected_topics.add(hold_topic)
+    if obstacle_thresholds_topic:
+        selected_topics.add(obstacle_thresholds_topic)
+    selected_topics.update(t for t in obstacle_metrics_topics.values() if t)
 
     if not selected_topics:
         raise RuntimeError("No relevant topics found. Check the bag path and namespaces.")
@@ -330,6 +416,10 @@ def main() -> None:
         print(f"  {ns}: pose_world={pose_topics[ns] or 'not found'}, odom={odom_topics[ns] or 'not found'}, u_world={u_topics[ns] or 'not found'}, cmd_vel={cmd_topics[ns] or 'not found'}")
     print(f"  metrics: {metrics_topic or 'not found'}")
     print(f"  thresholds: {thresholds_topic or 'not found'}")
+    print(f"  hold_state: {hold_topic or 'not found'}")
+    print(f"  obstacle_thresholds: {obstacle_thresholds_topic or 'not found'}")
+    for ns in namespaces:
+        print(f"  {ns}: obstacle_metrics={obstacle_metrics_topics[ns] or 'not found'}")
     print(f"Using storage_id={storage_id}")
 
     pose_by_ns = {ns: empty_series() for ns in namespaces}
@@ -337,6 +427,9 @@ def main() -> None:
     cmd_by_ns = {ns: {"t": [], "linear_x": [], "angular_z": []} for ns in namespaces}
     metrics_topic_data = {"t": [], "distance": [], "target": [], "margin": []}
     threshold_topic_data = {"t": [], "d_safe": [], "d_agent_enter": [], "d_agent_exit": []}
+    hold_topic_data = {"t": [], "active": [], "selected_error": [], "pair_error": []}
+    obstacle_threshold_data = {"t": [], "d_obs_enter": [], "d_obs_exit": [], "warning": []}
+    obstacle_metrics_by_ns = {ns: {"t": [], "distance": [], "clearance": [], "active": []} for ns in namespaces}
 
     t0: Optional[int] = None
     counts: Counter[str] = Counter()
@@ -364,6 +457,11 @@ def main() -> None:
                 _append_u(u_by_ns[ns], t, msg.vector.x, msg.vector.y)
             elif topic == cmd_topics[ns]:
                 _append_cmd(cmd_by_ns[ns], t, msg.linear.x, msg.angular.z)
+            elif topic == obstacle_metrics_topics[ns]:
+                obstacle_metrics_by_ns[ns]["t"].append(t)
+                obstacle_metrics_by_ns[ns]["distance"].append(float(msg.vector.x))
+                obstacle_metrics_by_ns[ns]["clearance"].append(float(msg.vector.y))
+                obstacle_metrics_by_ns[ns]["active"].append(float(msg.vector.z))
 
         if topic == metrics_topic:
             metrics_topic_data["t"].append(t)
@@ -375,6 +473,16 @@ def main() -> None:
             threshold_topic_data["d_safe"].append(float(msg.vector.x))
             threshold_topic_data["d_agent_enter"].append(float(msg.vector.y))
             threshold_topic_data["d_agent_exit"].append(float(msg.vector.z))
+        elif topic == hold_topic:
+            hold_topic_data["t"].append(t)
+            hold_topic_data["active"].append(float(msg.vector.x))
+            hold_topic_data["selected_error"].append(float(msg.vector.y))
+            hold_topic_data["pair_error"].append(float(msg.vector.z))
+        elif topic == obstacle_thresholds_topic:
+            obstacle_threshold_data["t"].append(t)
+            obstacle_threshold_data["d_obs_enter"].append(float(msg.vector.x))
+            obstacle_threshold_data["d_obs_exit"].append(float(msg.vector.y))
+            obstacle_threshold_data["warning"].append(float(msg.vector.z))
 
     if threshold_topic_data["d_safe"]:
         args.d_safe = float(threshold_topic_data["d_safe"][-1])
@@ -417,6 +525,9 @@ def main() -> None:
     if len(namespaces) >= 2:
         ns1, ns2 = namespaces[0], namespaces[1]
         plt.plot([common[ns1]["x"][-1], common[ns2]["x"][-1]], [common[ns1]["y"][-1], common[ns2]["y"][-1]], "k--", alpha=0.6, label="final pair distance")
+    obstacle_data_available = bool(obstacle_threshold_data["t"] or _topic_has_samples(obstacle_metrics_by_ns))
+    if should_show_obstacle(args.show_obstacle, obstacle_data_available):
+        draw_obstacle_on_axes(plt.gca(), args.obstacle_center_x, args.obstacle_center_y, args.obstacle_radius, args.obstacle_margin)
     plt.axis("equal")
     plt.grid(True)
     plt.xlabel("world x [m]")
@@ -527,7 +638,71 @@ def main() -> None:
         plt.legend()
         savefig(outdir, "team_analysis_csv_distance_comparison")
 
+    # 8) Hold-zone state.
+    if hold_topic_data["t"]:
+        plt.figure(figsize=(10, 5))
+        t_hold = _as_np(hold_topic_data["t"])
+        plt.step(t_hold, _as_np(hold_topic_data["active"]), where="post", label="hold active (1=yes)")
+        plt.plot(t_hold, _as_np(hold_topic_data["selected_error"]), label="selected hold error [m]")
+        plt.plot(t_hold, _as_np(hold_topic_data["pair_error"]), label="pairwise formation error [m]")
+        plt.axhline(args.formation_hold_enter_error, linestyle=":", label=f"hold enter={args.formation_hold_enter_error:.2f} m")
+        plt.axhline(args.formation_hold_exit_error, linestyle="--", label=f"hold exit={args.formation_hold_exit_error:.2f} m")
+        plt.grid(True)
+        plt.xlabel("time [s]")
+        plt.ylabel("hold state / error")
+        plt.title("Formation hold-zone state and errors")
+        plt.legend(ncol=2)
+        savefig(outdir, "team_hold_state")
+
+    # 9) Obstacle clearance and obstacle-active flags.
+    if _topic_has_samples(obstacle_metrics_by_ns):
+        d_obs_enter = obstacle_threshold_data["d_obs_enter"][-1] if obstacle_threshold_data["d_obs_enter"] else np.nan
+        d_obs_exit = obstacle_threshold_data["d_obs_exit"][-1] if obstacle_threshold_data["d_obs_exit"] else np.nan
+        warning = obstacle_threshold_data["warning"][-1] if obstacle_threshold_data["warning"] else np.nan
+
+        plt.figure(figsize=(10, 5))
+        for ns in namespaces:
+            if obstacle_metrics_by_ns[ns]["t"]:
+                plt.plot(obstacle_metrics_by_ns[ns]["t"], obstacle_metrics_by_ns[ns]["clearance"], label=f"{ns} inflated-obstacle clearance")
+        plt.axhline(0.0, linestyle="--", label="inflated obstacle boundary")
+        if not np.isnan(d_obs_enter):
+            plt.axhline(d_obs_enter, linestyle=":", label=f"d_obs_enter={d_obs_enter:.2f} m")
+        if not np.isnan(d_obs_exit):
+            plt.axhline(d_obs_exit, linestyle="-.", label=f"d_obs_exit={d_obs_exit:.2f} m")
+        if not np.isnan(warning):
+            plt.axhline(warning, linestyle=":", label=f"warning={warning:.2f} m")
+        plt.grid(True)
+        plt.xlabel("time [s]")
+        plt.ylabel("clearance [m]")
+        plt.title("Obstacle clearance from inflated obstacle boundary")
+        plt.legend(ncol=2)
+        savefig(outdir, "team_obstacle_clearance")
+
+        plt.figure(figsize=(10, 4))
+        for ns in namespaces:
+            if obstacle_metrics_by_ns[ns]["t"]:
+                plt.step(obstacle_metrics_by_ns[ns]["t"], obstacle_metrics_by_ns[ns]["active"], where="post", label=f"{ns} obstacle active")
+        plt.ylim(-0.1, 1.1)
+        plt.grid(True)
+        plt.xlabel("time [s]")
+        plt.ylabel("active flag")
+        plt.title("Obstacle avoidance active flags")
+        plt.legend(ncol=2)
+        savefig(outdir, "team_obstacle_active")
+
     write_summary(outdir, bag_path, storage_id, namespaces, metrics, counts, args.d_safe, args.d_agent_enter, args.d_agent_exit, target_distance, analysis_csv_path)
+    append_extra_summary(
+        outdir,
+        hold_topic_data,
+        obstacle_metrics_by_ns,
+        obstacle_threshold_data,
+        {
+            "obstacle_center_x": args.obstacle_center_x,
+            "obstacle_center_y": args.obstacle_center_y,
+            "obstacle_radius": args.obstacle_radius,
+            "obstacle_margin": args.obstacle_margin,
+        },
+    )
     print(f"\nDone. Team plots and summary were written to:\n{outdir}")
 
 
