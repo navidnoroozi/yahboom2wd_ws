@@ -829,7 +829,7 @@ The Yahboom bridge must already be running in Terminal 1 before starting a feedb
 | 8 | two-robot distributed MPC dry run | Validate namespaces, networking, time alignment, common world frame, ZeroMQ communication, command publishing, and two-robot MPC behavior | Dry run passed: VM sees both robots, `/dmpc/robot*/pose_world` confirms the measured common-frame initial poses, `/dmpc/robot*/u_world` is published, and `/robot*/cmd_vel` stays zero with `enable_motion:=false` | Passed | Use this as the safety gate before enabling motion |
 | 9 | first two-robot motion-enabled DMPC test | Command both physical Yahboom robots from the VM coordinator using the validated common world frame | The 60-second test converged near the 0.80 m target formation and remained collision-safe; the earlier bag reported final distance `0.8197 m`, minimum distance `0.7255 m`, and minimum safety margin `0.0755 m` | Passed | Keep as the baseline motion-enabled formation test |
 | 10 | hold-zone-enabled two-robot formation test | Stop translational hunting after convergence and allow heading-only correction | Both robots converged to the safe formation, turned to face each other, and remained stationary in the safe set | Passed | Keep the hold-zone configuration as the hardware baseline |
-| 11 | two-robot obstacle-avoidance test | Validate obstacle clearance while preserving inter-robot safety and final formation hold | Not started | Next | Parameterize one small circular obstacle, validate in simulation, then run a reduced-speed hardware test |
+| 11 | two-robot obstacle-avoidance test | Validate obstacle clearance while preserving inter-robot safety and final formation hold | Parameterized one-obstacle scenario passed in simulation: minimum inflated-obstacle clearance `0.1200 m`, minimum inter-robot distance `0.7091 m`, obstacle-active samples on both robots, final formation error `0.0377 m` | Simulation passed | Run hardware dry run with `enable_motion:=false`, then a 25-second reduced-speed physical obstacle test |
 | 12 | four-robot distributed MPC setup | Scale the final planner to four robots | Not started | Future | Order and commission `robot3` and `robot4` after obstacle avoidance is stable |
 
 The progress table should be updated after every bagged experiment. Keep the terminal command, bag folder name, physical observation, and plotted result together so that calibration decisions are traceable.
@@ -1666,11 +1666,77 @@ The two-robot motion-enabled formation test and the hold-zone-enabled hardware t
 - remain stationary in the safe set
 ```
 
-The next development stage is obstacle avoidance. Do not move directly to a full-size obstacle on hardware. First parameterize the obstacle geometry and tangential-waypoint parameters, then validate one small circular obstacle in simulation using the 2 m × 3 m field constraints.
+The next development stage is hardware obstacle avoidance. The small one-obstacle scenario has now passed in simulation. Do not move directly to a full-size obstacle or a 60-second hardware run. First run the same scenario on hardware with `enable_motion:=false`, then perform a short 25-second reduced-speed physical obstacle test.
+
+## Verified obstacle-avoidance activation simulation test
+
+The parameterized one-obstacle simulation has passed and is now the gateway to hardware obstacle testing.
+
+Validated bag:
+
+```text
+/home/navid/yahboom2wd_ws/bags/two_robot_dmpc_motion_20260712_032738
+```
+
+Validated scenario:
+
+```text
+field convention:
+  x direction = 3 m field length
+  y direction = 2 m field width, approximately -1.0 m to +1.0 m
+
+robot1 initial pose = (1.0, -0.7, 0.0)
+robot2 initial pose = (1.0, +0.7, 0.0)
+
+obstacle center = (1.0, -0.33) m
+physical obstacle radius = 0.15 m
+obstacle margin = 0.10 m
+inflated obstacle radius = 0.25 m
+```
+
+Validated conservative parameters:
+
+```text
+max_linear_speed = 0.02 m/s
+max_angular_speed = 0.12 rad/s
+u_bound = 0.02
+
+d_safe = 0.65 m
+formation_margin = 0.15 m
+d_agent_enter = 0.68 m
+d_agent_exit = 0.72 m
+
+d_obs_enter = 0.15 m
+d_obs_exit = 0.25 m
+obstacle_warning_radius = 0.35 m
+tangential_waypoint_radius = 0.12 m
+orbit_tangent_lookahead = 0.20 m
+formation_hold_enabled = true
+```
+
+Analyzer result:
+
+```text
+target pair distance:                    0.8000 m
+initial distance:                         1.4000 m
+final distance:                           0.7623 m
+final absolute formation-distance error:  0.0377 m
+min distance:                             0.7091 m
+minimum safety margin distance-d_safe:    0.0591 m
+
+minimum inflated-obstacle clearance:      0.1200 m
+robot1 obstacle-active samples:           24 / 594
+robot2 obstacle-active samples:           15 / 594
+hold active samples:                       8 / 594
+```
+
+This is considered a real obstacle-avoidance simulation pass because at least one robot entered obstacle-active mode, the inflated-obstacle clearance stayed positive, the inter-robot distance stayed above `d_safe`, and the final formation-distance error remained below `5 cm`.
+
+The next step is a hardware dry run with `enable_motion:=false`, followed by a short 25-second physical obstacle test using the same parameters.
 
 ## Next stage: obstacle-avoidance validation in the 2 m × 3 m test field
 
-Obstacle avoidance is the correct next feature to validate, but it should not be enabled on the hardware with the current generic obstacle defaults. The current pure-Python defaults were designed for a larger coordinate range. In particular, values such as:
+Obstacle avoidance is the current feature under validation. The parameterized one-obstacle simulation has passed, but hardware testing should still start with a dry run and a short reduced-speed motion test. The current pure-Python defaults were designed for a larger coordinate range. In particular, values such as:
 
 ```text
 tangential_waypoint_radius = 1.30 m
@@ -1750,7 +1816,49 @@ u_bound = 0.02
 
 These are initial simulation values, not yet validated hardware parameters. The obstacle location must be selected so that the inflated obstacle, the target formation, and the planned tangent waypoints all remain inside the marked field with additional wall clearance.
 
-The next implementation task is therefore to parameterize obstacle geometry and tangent-waypoint settings, add obstacle-clearance debug topics and plots, and validate the complete scenario in simulation before enabling `obstacles_enabled:=true` on the physical robots.
+The next task is therefore not more parameterization; it is hardware validation using the same parameters that passed in simulation. Start with `enable_motion:=false`, then a 25-second reduced-speed run, and only then repeat for 60 seconds.
+
+### Exact next hardware obstacle test sequence
+
+Use exactly the same geometry and thresholds that passed in simulation:
+
+```text
+robot1_initial_x = 1.0
+robot1_initial_y = -0.7
+robot2_initial_x = 1.0
+robot2_initial_y = +0.7
+
+obstacle_center_x = 1.0
+obstacle_center_y = -0.33
+obstacle_radius = 0.15
+obstacle_margin = 0.10
+
+max_linear_speed = 0.02
+max_angular_speed = 0.12
+u_bound = 0.02
+
+d_obs_enter = 0.15
+d_obs_exit = 0.25
+obstacle_warning_radius = 0.35
+tangential_waypoint_radius = 0.12
+orbit_tangent_lookahead = 0.20
+```
+
+Run in this order:
+
+```text
+1. Place the robots and soft obstacle at the measured coordinates.
+2. Start both Yahboom bridge nodes.
+3. Start both robot-side DMPC controller nodes with the same obstacle parameters.
+4. Start the VM coordinator for 15 seconds with enable_motion:=false.
+5. Verify /dmpc/robot*/pose_world and /dmpc/robot*/obstacle_metrics.
+6. Confirm /robot1/cmd_vel and /robot2/cmd_vel remain zero.
+7. Start bag recording with obstacle and hold topics included.
+8. Run a 25-second motion-enabled hardware obstacle test.
+9. Analyze and plot the bag before extending the test to 60 seconds.
+```
+
+The 25-second hardware test passes only if the minimum inflated-obstacle clearance remains positive, the minimum inter-robot distance stays above `0.65 m`, at least one robot has obstacle-active samples, both robots remain inside the 2 m x 3 m field, and both robots stop when the coordinator exits.
 
 ## Two-robot distributed MPC development stage
 
@@ -1761,7 +1869,7 @@ robot1 -> /robot1/odom, /robot1/cmd_vel
 robot2 -> /robot2/odom, /robot2/cmd_vel
 ```
 
-The active next milestone is a parameterized one-obstacle scenario in simulation and then on hardware. The final research target remains a four-robot distributed MPC setup, but scaling should wait until obstacle avoidance is repeatable inside the available 2 m × 3 m field.
+The active next milestone is the hardware validation of the parameterized one-obstacle scenario that has already passed in simulation. The final research target remains a four-robot distributed MPC setup, but scaling should wait until obstacle avoidance is repeatable inside the available 2 m × 3 m field.
 
 ### Development strategy
 
@@ -1773,7 +1881,7 @@ Use the following staged plan:
 | 2 | `robot2` only | Assemble, calibrate, and validate the second Yahboom 2WD robot with the same test suite | Complete |
 | 3 | `robot1` + `robot2` | Run the distributed MPC stack in a two-robot star topology | Complete |
 | 4 | `robot1` + `robot2` | Validate formation hold/deadband and heading-only correction | Complete |
-| 5 | `robot1` + `robot2` | Validate one parameterized circular obstacle in simulation and hardware | Next |
+| 5 | `robot1` + `robot2` | Validate one parameterized circular obstacle in simulation and hardware | Simulation passed; hardware dry run next |
 | 6 | `robot1` + `robot2` + simulated agents | Optionally test mixed hardware/SIL scaling behavior | Optional |
 | 7 | `robot1` ... `robot4` | Order and commission two more robots only after the two-robot obstacle-avoidance stack is stable | Future |
 
@@ -1904,7 +2012,7 @@ max_angular_speed  = 0.35 rad/s
 obstacles_enabled  = false
 ```
 
-The obstacle-free formation, reduced-speed hardware run, and hold-zone-enabled formation test have now passed. Keep this configuration as the baseline. The next stage is a separately parameterized obstacle-avoidance scenario, first in simulation and then on hardware.
+The obstacle-free formation, reduced-speed hardware run, hold-zone-enabled formation test, and parameterized obstacle-avoidance simulation have now passed. Keep this configuration as the baseline. The next stage is the hardware obstacle dry run and then the short 25-second physical obstacle test.
 
 
 ### Current DMPC package fixes and deployment notes
@@ -1940,4 +2048,4 @@ Commit these fixes to the Git repository and pull the same version on `robot1`, 
 12. Switch to `enable_motion:=true` only in a clear test area and initially reduce `u_bound`, `max_linear_speed`, and `max_angular_speed`.
 13. Record a bag containing both robots' odometry, commands, world poses, and DMPC debug topics.
 
-Do not move to four physical robots until the two-robot formation-hold and obstacle-avoidance scenarios run repeatably and safely.
+Do not move to four physical robots until the two-robot formation-hold and physical obstacle-avoidance scenarios run repeatably and safely.

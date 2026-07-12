@@ -196,9 +196,9 @@ obstacle_center_x = 1.0
 obstacle_center_y = -0.33
 obstacle_radius = 0.15
 obstacle_margin = 0.10
-obstacle_warning_radius = 0.25
-d_obs_enter = 0.10
-d_obs_exit = 0.20
+obstacle_warning_radius = 0.35
+d_obs_enter = 0.15
+d_obs_exit = 0.25
 tangential_waypoint_radius = 0.12
 orbit_tangent_lookahead = 0.20
 ```
@@ -214,3 +214,96 @@ ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
 ```
 
 The analyzer now also summarizes `/dmpc/robot*/obstacle_metrics`, `/dmpc/two_robot/obstacle_thresholds`, and `/dmpc/two_robot/hold_state` when those topics exist in the bag.
+
+## Verified obstacle-avoidance activation simulation
+
+The obstacle-avoidance activation simulation has passed with the parameterized one-obstacle scenario.
+
+Validated bag:
+
+```text
+/home/navid/yahboom2wd_ws/bags/two_robot_dmpc_motion_20260712_032738
+```
+
+Validated command parameters:
+
+```text
+robot1_initial_x = 1.0
+robot1_initial_y = -0.7
+robot2_initial_x = 1.0
+robot2_initial_y = 0.7
+
+max_linear_speed  = 0.02
+max_angular_speed = 0.12
+u_bound           = 0.02
+
+d_safe = 0.65
+formation_margin = 0.15
+d_agent_enter = 0.68
+d_agent_exit = 0.72
+
+obstacles_enabled = true
+obstacle_center_x = 1.0
+obstacle_center_y = -0.33
+obstacle_radius = 0.15
+obstacle_margin = 0.10
+d_obs_enter = 0.15
+d_obs_exit = 0.25
+obstacle_warning_radius = 0.35
+tangential_waypoint_radius = 0.12
+orbit_tangent_lookahead = 0.20
+formation_hold_enabled = true
+```
+
+Analyzer result:
+
+```text
+target pair distance:                    0.8000 m
+initial distance:                         1.4000 m
+final distance:                           0.7623 m
+final absolute formation-distance error:  0.0377 m
+min distance:                             0.7091 m
+minimum safety margin distance-d_safe:    0.0591 m
+
+minimum inflated-obstacle clearance:      0.1200 m
+robot1 obstacle-active samples:           24 / 594
+robot2 obstacle-active samples:           15 / 594
+hold active samples:                       8 / 594
+```
+
+This run is considered a real obstacle-avoidance simulation pass because obstacle activity was nonzero, the minimum obstacle clearance stayed positive, the inter-robot distance stayed above `d_safe`, and the final pair distance remained within about `4 cm` of the target formation distance.
+
+The earlier `d_obs_enter=0.10`, `d_obs_exit=0.20`, `obstacle_warning_radius=0.25` run was a useful obstacle-enabled safety regression, but it was not a strong obstacle-activation test because no robot entered obstacle-active mode. The validated activation thresholds for the first hardware attempt are therefore:
+
+```text
+d_obs_enter = 0.15
+d_obs_exit = 0.25
+obstacle_warning_radius = 0.35
+```
+
+## Next validation step after the passed simulation
+
+The next step is the hardware obstacle dry run and then a short reduced-speed hardware test. Keep the exact same obstacle geometry and thresholds as the passed simulation so that simulation and hardware remain comparable.
+
+The first hardware dry run must use `enable_motion:=false`. Only after `/dmpc/robot*/pose_world`, `/dmpc/robot*/obstacle_metrics`, and zero `/robot*/cmd_vel` are verified should the 25-second motion-enabled test be run.
+
+For hardware bag recording, include the obstacle and hold topics:
+
+```text
+/dmpc/robot1/obstacle_metrics
+/dmpc/robot2/obstacle_metrics
+/dmpc/two_robot/obstacle_thresholds
+/dmpc/two_robot/hold_state
+```
+
+The 25-second hardware test passes only if:
+
+```text
+minimum inflated-obstacle clearance > 0.0 m
+minimum inter-robot distance > 0.65 m
+at least one robot has obstacle-active samples > 0
+the robots stay inside the 2 m x 3 m field
+both robots stop when the coordinator exits
+```
+
+Only after that passes should the same setup be repeated for 60 seconds.
