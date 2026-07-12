@@ -829,7 +829,7 @@ The Yahboom bridge must already be running in Terminal 1 before starting a feedb
 | 8 | two-robot distributed MPC dry run | Validate namespaces, networking, time alignment, common world frame, ZeroMQ communication, command publishing, and two-robot MPC behavior | Dry run passed: VM sees both robots, `/dmpc/robot*/pose_world` confirms the measured common-frame initial poses, `/dmpc/robot*/u_world` is published, and `/robot*/cmd_vel` stays zero with `enable_motion:=false` | Passed | Use this as the safety gate before enabling motion |
 | 9 | first two-robot motion-enabled DMPC test | Command both physical Yahboom robots from the VM coordinator using the validated common world frame | The 60-second test converged near the 0.80 m target formation and remained collision-safe; the earlier bag reported final distance `0.8197 m`, minimum distance `0.7255 m`, and minimum safety margin `0.0755 m` | Passed | Keep as the baseline motion-enabled formation test |
 | 10 | hold-zone-enabled two-robot formation test | Stop translational hunting after convergence and allow heading-only correction | Both robots converged to the safe formation, turned to face each other, and remained stationary in the safe set | Passed | Keep the hold-zone configuration as the hardware baseline |
-| 11 | two-robot obstacle-avoidance test | Validate obstacle clearance while preserving inter-robot safety and final formation hold | Parameterized one-obstacle scenario passed in simulation, and the hardware dry run with `enable_motion:=false` also passed: correct common-frame poses, expected obstacle metrics, zero nonzero `cmd_vel` samples, and stable ~30 Hz odometry | Hardware dry run passed | Run the 25-second reduced-speed physical obstacle test with `enable_motion:=true` |
+| 11 | two-robot obstacle-avoidance test | Validate obstacle clearance while preserving inter-robot safety and final formation hold | First physical one-obstacle hardware baseline passed with `d_obs_exit = 0.20`: minimum inflated-obstacle clearance `0.1011 m`, minimum inter-robot distance `0.7397 m`, final formation error `0.0436 m`, and hold active `208 / 393` samples | Physical baseline passed | Run the mirrored obstacle repeatability and symmetry test with obstacle center `(1.0, +0.33)` |
 | 12 | four-robot distributed MPC setup | Scale the final planner to four robots | Not started | Future | Order and commission `robot3` and `robot4` after obstacle avoidance is stable |
 
 The progress table should be updated after every bagged experiment. Keep the terminal command, bag folder name, physical observation, and plotted result together so that calibration decisions are traceable.
@@ -1666,7 +1666,7 @@ The two-robot motion-enabled formation test and the hold-zone-enabled hardware t
 - remain stationary in the safe set
 ```
 
-The next development stage is hardware obstacle avoidance. The small one-obstacle scenario has now passed in simulation. Do not move directly to a full-size obstacle or a 60-second hardware run. First run the same scenario on hardware with `enable_motion:=false`, then perform a short 25-second reduced-speed physical obstacle test.
+The first physical one-obstacle hardware baseline has now passed for the 15 cm obstacle with `d_obs_exit = 0.20`. The next development stage is the mirrored repeatability and symmetry test with the obstacle placed closer to `robot2`. Do not move directly to a full-size obstacle or a 0.40 m radius obstacle.
 
 ## Verified obstacle-avoidance activation simulation test
 
@@ -1732,7 +1732,7 @@ hold active samples:                       8 / 594
 
 This is considered a real obstacle-avoidance simulation pass because at least one robot entered obstacle-active mode, the inflated-obstacle clearance stayed positive, the inter-robot distance stayed above `d_safe`, and the final formation-distance error remained below `5 cm`.
 
-The hardware dry run with `enable_motion:=false` has now passed. The next step is a short 25-second physical obstacle test using the same parameters.
+The hardware dry run with `enable_motion:=false` and the first physical obstacle-avoidance hardware baseline have now passed. The next step is the mirrored obstacle repeatability and symmetry test.
 
 ## Verified hardware obstacle dry run with no physical motion
 
@@ -1830,6 +1830,114 @@ robot2 obstacle-active samples:           0 / 77
 This hardware dry run is considered passed because the common world-frame initialization, obstacle geometry, obstacle thresholds, ROS 2 topic visibility, ZeroMQ connectivity, obstacle diagnostics, and zero-motion safety gate all behaved as expected.
 
 The formation error remains large in this dry run because the robots are intentionally not allowed to move. That is not a failure for `enable_motion:=false`.
+
+## Verified physical obstacle-avoidance hardware baseline
+
+The first full physical two-robot obstacle-avoidance hardware test has passed for the left-side 15 cm obstacle scenario. This is now the validated hardware baseline for the parameterized one-obstacle feature.
+
+Validated hardware bag:
+
+```text
+/home/navid/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_180s_20260712_164222
+```
+
+Validated physical setup:
+
+```text
+field convention:
+  x direction = 3 m field length
+  y direction = 2 m field width, approximately -1.0 m to +1.0 m
+
+robot1 initial pose = (1.0, -0.7, 0.0)
+robot2 initial pose = (1.0, +0.7, 0.0)
+
+obstacle center = (1.0, -0.33) m
+physical obstacle radius = 0.15 m
+obstacle margin = 0.10 m
+inflated obstacle radius = 0.25 m
+```
+
+Validated hardware-baseline parameters:
+
+```text
+max_linear_speed = 0.02 m/s
+max_angular_speed = 0.12 rad/s
+u_bound = 0.02
+
+d_safe = 0.65 m
+formation_margin = 0.15 m
+d_agent_enter = 0.68 m
+d_agent_exit = 0.72 m
+
+obstacles_enabled = true
+obstacle_center_x = 1.0
+obstacle_center_y = -0.33
+obstacle_radius = 0.15
+obstacle_margin = 0.10
+
+d_obs_enter = 0.15 m
+d_obs_exit = 0.20 m
+obstacle_warning_radius = 0.35 m
+
+tangential_waypoint_radius = 0.12 m
+orbit_tangent_lookahead = 0.20 m
+
+formation_hold_enabled = true
+formation_hold_metric = pairwise
+formation_hold_enter_error = 0.04 m
+formation_hold_exit_error = 0.08 m
+formation_hold_min_steps = 2
+formation_hold_heading_enabled = true
+formation_hold_heading_gain = 1.0
+formation_hold_max_angular_speed = 0.12 rad/s
+formation_hold_heading_tolerance_rad = 0.10 rad
+```
+
+Analyzer result:
+
+```text
+target pair distance:                    0.8000 m
+initial inter-robot distance:             1.4000 m
+final inter-robot distance:               0.8436 m
+final absolute formation-distance error:  0.0436 m
+minimum inter-robot distance:             0.7397 m
+minimum safety margin to d_safe:          0.0897 m
+maximum inter-robot distance:             1.5981 m
+
+minimum inflated-obstacle clearance:      0.1011 m
+robot1 obstacle-active samples:           16 / 393
+robot2 obstacle-active samples:            8 / 393
+hold active samples:                     208 / 393
+
+robot1 nonzero cmd_vel samples:          245 / 393
+robot2 nonzero cmd_vel samples:          224 / 393
+```
+
+This hardware run is considered passed because:
+
+```text
+minimum inflated-obstacle clearance > 0.0 m
+minimum inter-robot distance > d_safe = 0.65 m
+obstacle-active samples > 0
+final absolute formation-distance error < 0.05 m
+hold active samples > 0
+translational commands became zero for a significant final part of the run
+```
+
+The earlier physical run with `d_obs_exit = 0.25 m` remained safe but did not reliably enter hold. The successful hardware-baseline change was:
+
+```text
+d_obs_exit: 0.25 m -> 0.20 m
+```
+
+The physical test was run for 180 seconds as a long validation run. Since convergence was observed at approximately 120 seconds, use the following durations going forward:
+
+```text
+standard hardware obstacle validation duration: 120 s
+long stability-observation duration:           180 s
+```
+
+Do not solve lack of convergence by simply increasing runtime beyond 180 seconds. If the robots do not enter the hold zone by approximately 120 seconds, tune the obstacle/hold interaction or the obstacle placement instead.
 
 ## Complete hardware obstacle dry-run workflow
 
@@ -2224,32 +2332,163 @@ robot1 cmd_vel has zero nonzero samples
 robot2 cmd_vel has zero nonzero samples
 ```
 
-## Next exact test: 25-second physical obstacle run
+## Next exact test: mirrored obstacle repeatability and symmetry run
 
-The dry run has passed. The next test is a short **25-second physical obstacle-avoidance run** with `enable_motion:=true`. Use exactly the same geometry and thresholds as the passed simulation and dry run.
+The validated left-side physical obstacle baseline has passed. The next meaningful test is not another longer run of the same scenario. The next test is a mirrored repeatability and symmetry test: place the same obstacle closer to `robot2` instead of `robot1`.
 
-### 1. Keep the current terminals running
-
-Keep these four robot-side terminals running:
+Use this mirrored physical setup:
 
 ```text
-robot1 Yahboom bridge
-robot2 Yahboom bridge
-robot1 DMPC controller
-robot2 DMPC controller
+robot1 start:    x=1.00 m, y=-0.70 m, yaw=0.0 rad
+robot2 start:    x=1.00 m, y=+0.70 m, yaw=0.0 rad
+
+obstacle center: x=1.00 m, y=+0.33 m
+obstacle radius: 0.15 m
+obstacle margin: 0.10 m
+inflated radius: 0.25 m
 ```
 
-Keep the robots and obstacle at the same measured positions:
+The mirrored test passes only if:
+
+```text
+minimum inflated-obstacle clearance > 0.0 m
+minimum inter-robot distance > 0.65 m
+robot2 obstacle-active samples > 0
+final absolute formation-distance error < 0.05 m
+hold active samples > 0
+both robots stop translating in hold
+both robots stay inside the 2 m x 3 m marked field
+```
+
+Use a 120-second coordinator run for the mirrored test. Keep the same validated hardware-baseline parameters, except set `obstacle_center_y:=0.33`.
+
+### 1. Physically reset the field
+
+Stop the coordinator and bag recorder. Put both robots and the obstacle back at the measured starting positions:
 
 ```text
 robot1:   x=1.00 m, y=-0.70 m, yaw=0.0
 robot2:   x=1.00 m, y=+0.70 m, yaw=0.0
-obstacle: x=1.00 m, y=-0.33 m, radius=0.15 m
+obstacle: x=1.00 m, y=+0.33 m, radius=0.15 m
 ```
 
-### 2. Ubuntu VM: prepare an emergency stop terminal
+Both robots should face the positive world x direction. Use the same soft, lightweight obstacle as before.
 
-Keep this ready in a separate VM terminal. Run it immediately if anything looks unsafe:
+### 2. Restart the Yahboom bridge on `robot1`
+
+On `robot1`, stop the old bridge with `Ctrl+C`, then relaunch:
+
+```bash
+cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot1 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
+```
+
+### 3. Restart the Yahboom bridge on `robot2`
+
+On `robot2`, stop the old bridge with `Ctrl+C`, then relaunch:
+
+```bash
+cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot2 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
+```
+
+Use robot2-specific calibration values if they are different.
+
+### 4. Restart the DMPC controller on `robot1`
+
+On `robot1`, stop the old controller with `Ctrl+C`, then relaunch with the mirrored obstacle center:
+
+```bash
+cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_dmpc robot_dmpc_controller.launch.py \
+  agent_id:=1 \
+  u_bound:=0.02 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.68 \
+  d_agent_exit:=0.72 \
+  obstacles_enabled:=true \
+  obstacle_center_x:=1.0 \
+  obstacle_center_y:=0.33 \
+  obstacle_radius:=0.15 \
+  obstacle_margin:=0.10 \
+  d_obs_enter:=0.15 \
+  d_obs_exit:=0.20 \
+  obstacle_warning_radius:=0.35 \
+  tangential_waypoint_radius:=0.12 \
+  orbit_tangent_lookahead:=0.20
+```
+
+### 5. Restart the DMPC controller on `robot2`
+
+On `robot2`, stop the old controller with `Ctrl+C`, then relaunch with the mirrored obstacle center:
+
+```bash
+cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_dmpc robot_dmpc_controller.launch.py \
+  agent_id:=2 \
+  u_bound:=0.02 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.68 \
+  d_agent_exit:=0.72 \
+  obstacles_enabled:=true \
+  obstacle_center_x:=1.0 \
+  obstacle_center_y:=0.33 \
+  obstacle_radius:=0.15 \
+  obstacle_margin:=0.10 \
+  d_obs_enter:=0.15 \
+  d_obs_exit:=0.20 \
+  obstacle_warning_radius:=0.35 \
+  tangential_waypoint_radius:=0.12 \
+  orbit_tangent_lookahead:=0.20
+```
+
+### 6. Ubuntu VM: verify odometry and ZeroMQ
 
 ```bash
 cd ~/yahboom2wd_ws
@@ -2257,14 +2496,106 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=42
 
-ros2 topic pub --once /robot1/cmd_vel geometry_msgs/msg/Twist \
-"{linear: {x: 0.0}, angular: {z: 0.0}}"
-
-ros2 topic pub --once /robot2/cmd_vel geometry_msgs/msg/Twist \
-"{linear: {x: 0.0}, angular: {z: 0.0}}"
+ros2 topic hz /robot1/odom
 ```
 
-### 3. Ubuntu VM: start the 25-second hardware bag
+Stop with `Ctrl+C`, then check `robot2`:
+
+```bash
+ros2 topic hz /robot2/odom
+```
+
+Check the controller ports:
+
+```bash
+nc -vz 192.168.178.87 5601
+nc -vz 192.168.178.94 5602
+```
+
+### 7. Ubuntu VM: dry-check the mirrored geometry with `enable_motion:=false`
+
+This run should not move the robots:
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+timeout --signal=SIGINT --kill-after=10s 20s \
+ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
+  robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
+  robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
+  robot1_initial_x:=1.0 \
+  robot1_initial_y:=-0.7 \
+  robot1_initial_yaw:=0.0 \
+  robot2_initial_x:=1.0 \
+  robot2_initial_y:=0.7 \
+  robot2_initial_yaw:=0.0 \
+  max_linear_speed:=0.02 \
+  max_angular_speed:=0.12 \
+  u_bound:=0.02 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.68 \
+  d_agent_exit:=0.72 \
+  obstacles_enabled:=true \
+  obstacle_center_x:=1.0 \
+  obstacle_center_y:=0.33 \
+  obstacle_radius:=0.15 \
+  obstacle_margin:=0.10 \
+  d_obs_enter:=0.15 \
+  d_obs_exit:=0.20 \
+  obstacle_warning_radius:=0.35 \
+  tangential_waypoint_radius:=0.12 \
+  orbit_tangent_lookahead:=0.20 \
+  formation_hold_enabled:=true \
+  formation_hold_metric:=pairwise \
+  formation_hold_enter_error:=0.04 \
+  formation_hold_exit_error:=0.08 \
+  formation_hold_min_steps:=2 \
+  formation_hold_heading_enabled:=true \
+  formation_hold_heading_gain:=1.0 \
+  formation_hold_max_angular_speed:=0.12 \
+  formation_hold_heading_tolerance_rad:=0.10 \
+  enable_motion:=false
+```
+
+In another VM terminal, check:
+
+```bash
+ros2 topic echo --once /dmpc/robot1/pose_world
+ros2 topic echo --once /dmpc/robot2/pose_world
+ros2 topic echo --once /dmpc/robot1/obstacle_metrics
+ros2 topic echo --once /dmpc/robot2/obstacle_metrics
+ros2 topic echo --once /dmpc/two_robot/obstacle_thresholds
+ros2 topic echo --once /robot1/cmd_vel
+ros2 topic echo --once /robot2/cmd_vel
+```
+
+Expected mirrored dry-check values:
+
+```text
+robot1 pose_world ≈ (1.0, -0.7)
+robot2 pose_world ≈ (1.0, +0.7)
+
+robot1 center distance to obstacle ≈ 1.03 m
+robot1 inflated clearance ≈ 0.78 m
+robot1 obstacle-active flag = 0.0
+
+robot2 center distance to obstacle ≈ 0.37 m
+robot2 inflated clearance ≈ 0.12 m
+robot2 obstacle-active flag = 1.0
+
+d_obs_enter = 0.15
+d_obs_exit  = 0.20
+obstacle_warning_radius = 0.35
+
+robot1 cmd_vel = 0
+robot2 cmd_vel = 0
+```
+
+### 8. Ubuntu VM: start bag recording for the 120-second mirrored run
 
 ```bash
 cd ~/yahboom2wd_ws
@@ -2275,7 +2606,7 @@ export ROS_DOMAIN_ID=42
 mkdir -p ~/yahboom2wd_ws/bags
 
 ros2 bag record -s sqlite3 \
-  -o ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_25s_$(date +%Y%m%d_%H%M%S) \
+  -o ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_mirror_120s_$(date +%Y%m%d_%H%M%S) \
   /robot1/odom \
   /robot2/odom \
   /robot1/cmd_vel \
@@ -2301,9 +2632,11 @@ ros2 bag record -s sqlite3 \
   /tf_static
 ```
 
-Keep the bag recorder running.
+Keep this terminal running.
 
-### 4. Ubuntu VM: run the 25-second motion-enabled coordinator
+### 9. Ubuntu VM: run the 120-second mirrored physical test
+
+Open another VM terminal:
 
 ```bash
 cd ~/yahboom2wd_ws
@@ -2311,7 +2644,7 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=42
 
-timeout --signal=SIGINT --kill-after=10s 25s \
+timeout --signal=SIGINT --kill-after=10s 120s \
 ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
   robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
@@ -2330,11 +2663,11 @@ ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   d_agent_exit:=0.72 \
   obstacles_enabled:=true \
   obstacle_center_x:=1.0 \
-  obstacle_center_y:=-0.33 \
+  obstacle_center_y:=0.33 \
   obstacle_radius:=0.15 \
   obstacle_margin:=0.10 \
   d_obs_enter:=0.15 \
-  d_obs_exit:=0.25 \
+  d_obs_exit:=0.20 \
   obstacle_warning_radius:=0.35 \
   tangential_waypoint_radius:=0.12 \
   orbit_tangent_lookahead:=0.20 \
@@ -2350,44 +2683,31 @@ ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   enable_motion:=true
 ```
 
-Watch the robots continuously. The purpose of this first physical run is not perfect final convergence; it is to verify that the obstacle-active behavior starts safely and that both robots remain collision-free and inside the marked field.
-
 After the coordinator exits, stop the bag recorder with `Ctrl+C`.
 
-### 5. Ubuntu VM: analyze the 25-second hardware bag
+### 10. Ubuntu VM: analyze the mirrored hardware bag
 
 ```bash
 cd ~/yahboom2wd_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-LATEST_HW_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_25s_* | head -1)
+LATEST_MIRROR_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_mirror_120s_* | head -1)
 
 ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
-  --bag "$LATEST_HW_BAG" \
+  --bag "$LATEST_MIRROR_BAG" \
   --storage sqlite3 \
   --d-safe 0.65 \
   --formation-margin 0.15
 
-cat "$LATEST_HW_BAG/two_robot_dmpc_analysis.txt"
+cat "$LATEST_MIRROR_BAG/two_robot_dmpc_analysis.txt"
 ```
 
-The 25-second hardware obstacle test passes only if:
-
-```text
-minimum inflated-obstacle clearance > 0.0 m
-minimum inter-robot distance > 0.65 m
-at least one robot has obstacle-active samples > 0
-both robots stay inside the 2 m x 3 m marked field
-commands remain slow and smooth
-both robots stop when the coordinator exits
-```
-
-### 6. Ubuntu VM: plot and animate the 25-second hardware run
+### 11. Ubuntu VM: plot and animate the mirrored hardware bag
 
 ```bash
 python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_bag.py \
-  --bag "$LATEST_HW_BAG" \
+  --bag "$LATEST_MIRROR_BAG" \
   --namespaces robot1 robot2 \
   --storage-id auto \
   --d-safe 0.65 \
@@ -2398,26 +2718,16 @@ python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_bag.py \
   --formation-hold-exit-error 0.08 \
   --show-obstacle always \
   --obstacle-center-x 1.0 \
-  --obstacle-center-y -0.33 \
+  --obstacle-center-y 0.33 \
   --obstacle-radius 0.15 \
   --obstacle-margin 0.10
-```
-
-Check at least these plots:
-
-```text
-$LATEST_HW_BAG/team_plots/team_world_trajectories.png
-$LATEST_HW_BAG/team_plots/team_obstacle_clearance.png
-$LATEST_HW_BAG/team_plots/team_obstacle_active.png
-$LATEST_HW_BAG/team_plots/team_inter_robot_distance.png
-$LATEST_HW_BAG/team_plots/team_safety_margin.png
 ```
 
 Create the animation:
 
 ```bash
 python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
-  --bag "$LATEST_HW_BAG" \
+  --bag "$LATEST_MIRROR_BAG" \
   --namespaces robot1 robot2 \
   --storage-id auto \
   --d-safe 0.65 \
@@ -2427,7 +2737,7 @@ python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
   --max-frames 600 \
   --show-obstacle always \
   --obstacle-center-x 1.0 \
-  --obstacle-center-y -0.33 \
+  --obstacle-center-y 0.33 \
   --obstacle-radius 0.15 \
   --obstacle-margin 0.10
 ```
@@ -2435,10 +2745,16 @@ python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
 Open the interactive animation:
 
 ```bash
-xdg-open "$LATEST_HW_BAG/team_animation/team_motion_interactive.html"
+xdg-open "$LATEST_MIRROR_BAG/team_animation/team_motion_interactive.html"
 ```
 
-Only after the 25-second run passes should the same configuration be repeated for `60s`.
+Only after this mirrored 15 cm obstacle test passes should the obstacle difficulty be increased. The next difficulty step should be:
+
+```text
+obstacle radius: 0.15 m -> 0.20 m
+```
+
+Do not jump directly to the maximum `0.40 m` radius obstacle.
 
 ## Two-robot distributed MPC development stage
 
@@ -2449,7 +2765,7 @@ robot1 -> /robot1/odom, /robot1/cmd_vel
 robot2 -> /robot2/odom, /robot2/cmd_vel
 ```
 
-The active next milestone is the hardware validation of the parameterized one-obstacle scenario that has already passed in simulation. The final research target remains a four-robot distributed MPC setup, but scaling should wait until obstacle avoidance is repeatable inside the available 2 m × 3 m field.
+The active next milestone is the mirrored repeatability and symmetry test for the parameterized one-obstacle scenario. The left-side 15 cm obstacle hardware baseline has passed. The final research target remains a four-robot distributed MPC setup, but scaling should wait until obstacle avoidance is repeatable on both sides of the available 2 m × 3 m field.
 
 ### Development strategy
 
@@ -2461,7 +2777,7 @@ Use the following staged plan:
 | 2 | `robot2` only | Assemble, calibrate, and validate the second Yahboom 2WD robot with the same test suite | Complete |
 | 3 | `robot1` + `robot2` | Run the distributed MPC stack in a two-robot star topology | Complete |
 | 4 | `robot1` + `robot2` | Validate formation hold/deadband and heading-only correction | Complete |
-| 5 | `robot1` + `robot2` | Validate one parameterized circular obstacle in simulation and hardware | Simulation passed; hardware dry run passed; 25-second physical test next |
+| 5 | `robot1` + `robot2` | Validate one parameterized circular obstacle in simulation and hardware | Left-side physical baseline passed; mirrored symmetry test next |
 | 6 | `robot1` + `robot2` + simulated agents | Optionally test mixed hardware/SIL scaling behavior | Optional |
 | 7 | `robot1` ... `robot4` | Order and commission two more robots only after the two-robot obstacle-avoidance stack is stable | Future |
 
@@ -2592,7 +2908,7 @@ max_angular_speed  = 0.35 rad/s
 obstacles_enabled  = false
 ```
 
-The obstacle-free formation, reduced-speed hardware run, hold-zone-enabled formation test, and parameterized obstacle-avoidance simulation have now passed. Keep this configuration as the baseline. The next stage is the hardware obstacle dry run and then the short 25-second physical obstacle test.
+The obstacle-free formation, reduced-speed hardware run, hold-zone-enabled formation test, parameterized obstacle-avoidance simulation, hardware obstacle dry run, and first physical obstacle-avoidance hardware baseline have now passed. Keep the validated 15 cm obstacle configuration with `d_obs_exit = 0.20` as the baseline. The next stage is the mirrored obstacle repeatability and symmetry test.
 
 
 ### Current DMPC package fixes and deployment notes
