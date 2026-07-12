@@ -34,11 +34,11 @@ dmpc_coordinator_ros_node:
 
     # Explicit-hybrid safety thresholds and hysteresis.
     safety_warning_radius: 1.20
-    obstacle_warning_radius: 1.20
+    obstacle_warning_radius: 0.25
     d_agent_enter: 0.68
     d_agent_exit: 0.72
-    d_obs_enter: 0.45
-    d_obs_exit: 0.85
+    d_obs_enter: 0.10
+    d_obs_exit: 0.20
 
     # Single-integrator explicit-hybrid gains.
     modeC_repulsion_gain_si: 0.90
@@ -56,6 +56,15 @@ dmpc_coordinator_ros_node:
 
     safety_enabled: true
     obstacles_enabled: false
+
+    # One circular obstacle in the common world/map frame.
+    # obstacle_radius is the physical radius; obstacle_margin inflates it for safety.
+    obstacle_center_x: 1.0
+    obstacle_center_y: -0.33
+    obstacle_radius: 0.15
+    obstacle_margin: 0.10
+    tangential_waypoint_radius: 0.12
+    orbit_tangent_lookahead: 0.20
 
     w_track: 8.0
     w_du: 3.0

@@ -69,6 +69,19 @@ def main() -> None:
         f"objective_mode={cfg.objective_mode} | safety_enabled={cfg.safety_enabled}",
         flush=True,
     )
+    if cfg.obstacles_enabled:
+        obs = cfg.obstacles_circles[0] if cfg.obstacles_circles else (float("nan"), float("nan"), float("nan"))
+        print(
+            f"[YahboomDMPCController {agent_id}] obstacle enabled: "
+            f"center=({obs[0]:.3f}, {obs[1]:.3f}) m, "
+            f"radius={obs[2]:.3f} m, margin={cfg.obstacle_margin:.3f} m, "
+            f"inflated_radius={obs[2] + cfg.obstacle_margin:.3f} m, "
+            f"d_obs_enter={cfg.d_obs_enter:.3f} m, d_obs_exit={cfg.d_obs_exit:.3f} m, "
+            f"obstacle_warning_radius={cfg.obstacle_warning_radius:.3f} m, "
+            f"tangential_waypoint_radius={cfg.tangential_waypoint_radius:.3f} m, "
+            f"orbit_tangent_lookahead={cfg.orbit_tangent_lookahead:.3f} m",
+            flush=True,
+        )
 
     while not stop_requested["value"]:
         try:

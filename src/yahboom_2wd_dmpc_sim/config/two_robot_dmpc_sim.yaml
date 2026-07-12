@@ -29,3 +29,14 @@ dmpc_defaults:
     d_agent_enter: 0.70
     d_agent_exit: 0.75
     safety_warning_radius: 1.20
+
+    obstacles_enabled: false
+    obstacle_center_x: 1.0
+    obstacle_center_y: -0.33
+    obstacle_radius: 0.15
+    obstacle_margin: 0.10
+    obstacle_warning_radius: 0.25
+    d_obs_enter: 0.10
+    d_obs_exit: 0.20
+    tangential_waypoint_radius: 0.12
+    orbit_tangent_lookahead: 0.20

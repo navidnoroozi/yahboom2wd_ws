@@ -155,13 +155,62 @@ robot2 desired offset: (-0.40, 0.0) m
 The safety hysteresis defaults are:
 
 ```text
-d_agent_enter = 0.70 m
-d_agent_exit  = 0.75 m
+d_agent_enter = 0.68 m
+d_agent_exit  = 0.72 m
 ```
 
 This is compatible with the formation because:
 
 ```text
 d_safe < d_agent_enter < d_agent_exit < d_form
-0.65   < 0.70          < 0.75         < 0.80
+0.65   < 0.68          < 0.72         < 0.80
 ```
+
+## Obstacle-avoidance simulation parameters
+
+The simulation launch file now exposes the same circular-obstacle parameters as the hardware DMPC launch files:
+
+```text
+obstacles_enabled
+obstacle_center_x
+obstacle_center_y
+obstacle_radius
+obstacle_margin
+obstacle_warning_radius
+d_obs_enter
+d_obs_exit
+tangential_waypoint_radius
+orbit_tangent_lookahead
+```
+
+The obstacle is defined in the coordinator's shared world/map frame. The practical inflated radius used by the safety layer is:
+
+```text
+inflated_radius = obstacle_radius + obstacle_margin
+```
+
+For the first 2 m x 3 m field simulation, use a small obstacle:
+
+```text
+obstacle_center_x = 1.0
+obstacle_center_y = -0.33
+obstacle_radius = 0.15
+obstacle_margin = 0.10
+obstacle_warning_radius = 0.25
+d_obs_enter = 0.10
+d_obs_exit = 0.20
+tangential_waypoint_radius = 0.12
+orbit_tangent_lookahead = 0.20
+```
+
+The simulation package records the same ROS topics as the hardware run, so bags can be analyzed with:
+
+```bash
+ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
+  --bag <bag_folder> \
+  --storage sqlite3 \
+  --d-safe 0.65 \
+  --formation-margin 0.15
+```
+
+The analyzer now also summarizes `/dmpc/robot*/obstacle_metrics`, `/dmpc/two_robot/obstacle_thresholds`, and `/dmpc/two_robot/hold_state` when those topics exist in the bag.

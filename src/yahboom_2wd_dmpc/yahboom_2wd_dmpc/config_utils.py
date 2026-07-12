@@ -46,11 +46,11 @@ def add_yahboom_dmpc_args(parser: argparse.ArgumentParser) -> argparse.ArgumentP
     # d_safe=0.65 and formation_margin=0.15, the desired formation distance is
     # 0.80 m, so d_agent_exit should stay below 0.80 m.
     parser.add_argument("--safety-warning-radius", type=float, default=1.20)
-    parser.add_argument("--obstacle-warning-radius", type=float, default=1.20)
+    parser.add_argument("--obstacle-warning-radius", type=float, default=0.25)
     parser.add_argument("--d-agent-enter", type=float, default=0.70)
     parser.add_argument("--d-agent-exit", type=float, default=0.75)
-    parser.add_argument("--d-obs-enter", type=float, default=0.45)
-    parser.add_argument("--d-obs-exit", type=float, default=0.85)
+    parser.add_argument("--d-obs-enter", type=float, default=0.10)
+    parser.add_argument("--d-obs-exit", type=float, default=0.20)
 
     # Single-integrator explicit-hybrid gains.
     parser.add_argument("--modeC-repulsion-gain-si", type=float, default=0.90)
@@ -69,6 +69,12 @@ def add_yahboom_dmpc_args(parser: argparse.ArgumentParser) -> argparse.ArgumentP
     parser.add_argument("--safety-enabled", type=str2bool, default=True)
     parser.add_argument("--safety-method", default="explicit_hybrid")
     parser.add_argument("--obstacles-enabled", type=str2bool, default=False)
+    parser.add_argument("--obstacle-center-x", type=float, default=1.0)
+    parser.add_argument("--obstacle-center-y", type=float, default=-0.33)
+    parser.add_argument("--obstacle-radius", type=float, default=0.15)
+    parser.add_argument("--obstacle-margin", type=float, default=0.10)
+    parser.add_argument("--tangential-waypoint-radius", type=float, default=0.12)
+    parser.add_argument("--orbit-tangent-lookahead", type=float, default=0.20)
 
     parser.add_argument("--w-track", type=float, default=8.0)
     parser.add_argument("--w-du", type=float, default=3.0)
@@ -105,11 +111,11 @@ def cfg_from_args(args: argparse.Namespace) -> NetConfig:
         formation_rotation_rad=float(getattr(args, "formation_rotation_rad", 0.0)),
         formation_radius_override=float(getattr(args, "formation_radius_override", 0.0)),
         safety_warning_radius=float(getattr(args, "safety_warning_radius", 1.20)),
-        obstacle_warning_radius=float(getattr(args, "obstacle_warning_radius", 1.20)),
+        obstacle_warning_radius=float(getattr(args, "obstacle_warning_radius", 0.25)),
         d_agent_enter=float(getattr(args, "d_agent_enter", 0.70)),
         d_agent_exit=float(getattr(args, "d_agent_exit", 0.75)),
-        d_obs_enter=float(getattr(args, "d_obs_enter", 0.45)),
-        d_obs_exit=float(getattr(args, "d_obs_exit", 0.85)),
+        d_obs_enter=float(getattr(args, "d_obs_enter", 0.10)),
+        d_obs_exit=float(getattr(args, "d_obs_exit", 0.20)),
         modeC_repulsion_gain_si=float(getattr(args, "modeC_repulsion_gain_si", 0.90)),
         modeO_target_gain_si=float(getattr(args, "modeO_target_gain_si", 0.95)),
         modeCO_repulsion_gain_si=float(getattr(args, "modeCO_repulsion_gain_si", 0.90)),
@@ -123,6 +129,14 @@ def cfg_from_args(args: argparse.Namespace) -> NetConfig:
         safety_enabled=bool(getattr(args, "safety_enabled", True)),
         safety_method=str(getattr(args, "safety_method", "explicit_hybrid")),
         obstacles_enabled=bool(getattr(args, "obstacles_enabled", False)),
+        obstacles_circles=((
+            float(getattr(args, "obstacle_center_x", 1.0)),
+            float(getattr(args, "obstacle_center_y", -0.33)),
+            float(getattr(args, "obstacle_radius", 0.15)),
+        ),),
+        obstacle_margin=float(getattr(args, "obstacle_margin", 0.10)),
+        tangential_waypoint_radius=float(getattr(args, "tangential_waypoint_radius", 0.12)),
+        orbit_tangent_lookahead=float(getattr(args, "orbit_tangent_lookahead", 0.20)),
         w_track=float(getattr(args, "w_track", 8.0)),
         w_du=float(getattr(args, "w_du", 3.0)),
         w_u=float(getattr(args, "w_u", 0.3)),

@@ -118,7 +118,7 @@ class NetConfig:
         1.90  # should be > d_safe to allow for some warning before a safety violation occurs, used for both agent-agent and agent-obstacle safety
     )
     obstacle_warning_radius: float = (
-        1.80  # should be > d_safe to allow for some warning before a safety violation occurs, used for agent-obstacle safety, i.e., should be < tangential_waypoint_radius to allow for tangential waypoint generation before a safety violation occurs
+        0.25  # clearance-from-inflated-obstacle warning radius for the small 2 m x 3 m hardware field
     )
 
     # mode hysteresis thresholds
@@ -128,8 +128,8 @@ class NetConfig:
     # so d_agent_exit must be < 1.05.
     d_agent_enter: float = 0.95
     d_agent_exit: float = 1.00
-    d_obs_enter: float = 0.45
-    d_obs_exit: float = 0.85
+    d_obs_enter: float = 0.10
+    d_obs_exit: float = 0.20
 
     # transition
     transition_steps: int = 1  # kept only for visualization; the practical safety supervisor commits directly to the safe command
@@ -137,11 +137,14 @@ class NetConfig:
     transition_lambda_end: float = 1.00  # ending value of the transition lambda parameter used for blending between modes C, O, and CO when using the explicit hybrid safety method, should be in the range [0, 1] and >= transition_lambda_start
 
     # obstacle model: circles (cx, cy, radius)
-    obstacles_enabled: bool = True
+    obstacles_enabled: bool = False
+    # One circular obstacle, configured as (center_x, center_y, physical_radius).
+    # The practical inflated radius used by the safety layer is physical_radius + obstacle_margin.
+    # Defaults are intentionally small-field hardware values for a 2 m x 3 m test area.
     obstacles_circles: Tuple[Tuple[float, float, float], ...] = (
-        (0.0, 1.0, 1.90),
-    )  # (x_o, y_o, r_o), x_o is the x-coordinate of the center, y_o is the y-coordinate of the center, and r_o is the radius of the obstacle; these parameters can be adjusted to add more obstacles or change their positions and sizes
-    obstacle_margin: float = 0.20
+        (1.0, -0.33, 0.15),
+    )
+    obstacle_margin: float = 0.10
 
     # single-integrator gains
     # The repulsion gain determines how strongly the agents are repelled from each other and from obstacles when they are within the safety warning radius.
@@ -179,7 +182,7 @@ class NetConfig:
     # The tangential waypoint radius around the inflated obstacle is a parameter that defines the distance from the center of an obstacle at which a tangential waypoint is generated for the agents to navigate around the obstacle.
     # Mathematically, if we consider an obstacle as a circle with a certain radius (inflated by the obstacle margin), the tangential waypoint would be located on a circle centered at the obstacle's center with a radius equal to the sum of the obstacle's radius and the tangential waypoint radius.
     # This means that the tangential waypoint is generated at a distance from the obstacle that allows the agents to safely navigate around it while maintaining a certain clearance, which is determined by the tangential waypoint radius. The choice of this radius should be such that it is greater than the obstacle warning radius plus the obstacle margin to ensure that the agents have enough space to maneuver around the obstacle without violating safety constraints.
-    tangential_waypoint_radius: float = (1.30) # should be > obstacle_warning_radius + obstacle_margin
+    tangential_waypoint_radius: float = 0.12  # compact tangential offset for the 2 m x 3 m hardware field
 
     # practical safety-filter tuning
     dynamic_pair_time_margin: float = 0.75
@@ -217,7 +220,7 @@ class NetConfig:
     pair_h2_margin_di: float = 0.06
     obs_h2_margin_di: float = 0.08
     modeO_tangent_gain_di: float = 0.85
-    orbit_tangent_lookahead: float = 0.90
+    orbit_tangent_lookahead: float = 0.20
 
     def controller_endpoint(self, agent_id_1based: int) -> str:
         return f"tcp://127.0.0.1:{self.ctrl_base_port + agent_id_1based}"
@@ -320,6 +323,12 @@ def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--safety-enabled", type=_str2bool, default=None)
     parser.add_argument("--safety-method", default=None)
     parser.add_argument("--obstacles-enabled", type=_str2bool, default=None)
+    parser.add_argument("--obstacle-center-x", type=float, default=None)
+    parser.add_argument("--obstacle-center-y", type=float, default=None)
+    parser.add_argument("--obstacle-radius", type=float, default=None)
+    parser.add_argument("--obstacle-margin", type=float, default=None)
+    parser.add_argument("--tangential-waypoint-radius", type=float, default=None)
+    parser.add_argument("--orbit-tangent-lookahead", type=float, default=None)
     parser.add_argument("--agent-id", type=int, default=None)
     parser.add_argument("--startup-delay-s", type=float, default=None)
     return parser
@@ -350,6 +359,22 @@ def config_from_namespace(ns: argparse.Namespace) -> NetConfig:
     oe = getattr(ns, "obstacles_enabled", None)
     if oe is not None:
         updates["obstacles_enabled"] = bool(oe)
+
+    obs_x = getattr(ns, "obstacle_center_x", None)
+    obs_y = getattr(ns, "obstacle_center_y", None)
+    obs_r = getattr(ns, "obstacle_radius", None)
+    if obs_x is not None or obs_y is not None or obs_r is not None:
+        default_x, default_y, default_r = cfg.obstacles_circles[0]
+        updates["obstacles_circles"] = ((
+            float(default_x if obs_x is None else obs_x),
+            float(default_y if obs_y is None else obs_y),
+            float(default_r if obs_r is None else obs_r),
+        ),)
+
+    for attr in ["obstacle_margin", "tangential_waypoint_radius", "orbit_tangent_lookahead"]:
+        v = getattr(ns, attr, None)
+        if v is not None:
+            updates[attr] = float(v)
 
     return replace(cfg, **updates)
 

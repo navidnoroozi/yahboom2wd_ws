@@ -257,6 +257,223 @@ sinusoidal
 - The dry-run common-frame verification has passed. With measured initial poses `robot1_initial_y = -0.7` and `robot2_initial_y = +0.7`, the coordinator published `/dmpc/robot1/pose_world` at `(0.0, -0.7)` and `/dmpc/robot2/pose_world` at `(0.0, +0.7)` in frame `map`, while `/robot1/cmd_vel` and `/robot2/cmd_vel` remained zero because `enable_motion = false`.
 - The debug topics `/dmpc/robot1/pose_world` and `/dmpc/robot2/pose_world` are now the recommended way to verify that the coordinator is using the intended common world-frame positions before enabling physical motion.
 
+## Verified two-robot hold-zone hardware test
+
+The formation-hold/deadband implementation has passed the first physical two-robot validation.
+
+Observed behavior:
+
+```text
+- robot1 and robot2 converged to the configured safe formation
+- the pair distance entered the configured formation hold band
+- the coordinator suppressed translational motion in hold mode
+- the robots corrected their headings until they faced each other
+- both robots then remained stationary inside the safe set
+- the earlier hunting around the final formation was no longer visually apparent
+```
+
+The validated conservative hardware settings were:
+
+```text
+max_linear_speed = 0.03 m/s
+max_angular_speed = 0.15 rad/s
+u_bound = 0.03
+
+d_safe = 0.65 m
+formation_margin = 0.15 m
+d_agent_enter = 0.68 m
+d_agent_exit = 0.72 m
+
+formation_hold_enabled = true
+formation_hold_metric = pairwise
+formation_hold_enter_error = 0.04 m
+formation_hold_exit_error = 0.08 m
+formation_hold_min_steps = 2
+formation_hold_heading_enabled = true
+formation_hold_heading_gain = 1.0
+formation_hold_max_angular_speed = 0.12 rad/s
+formation_hold_heading_tolerance_rad = 0.10 rad
+```
+
+The test validates the practical hardware behavior of the hold layer: formation convergence, hysteretic entry into hold mode, zero translational command inside the hold zone, heading-only correction, and stationary formation keeping. Keep `/dmpc/two_robot/hold_state` in future bags so the activation and release of hold mode remain traceable.
+
+## Python environment separation and compatibility checks
+
+The Ubuntu VM intentionally uses two separate Python environments:
+
+```text
+ROS 2 Humble and yahboom2wd_ws:
+  Python executable: /usr/bin/python3
+  Python version:    3.10.12
+  ROS distribution: Humble
+  colcon executable: /usr/bin/colcon
+
+bahnstrom_ems:
+  Python executable: ~/git_repos/bahnstrom_ems/.venv/bin/python
+  Python version:    3.12.11
+  Environment type:  project-local virtual environment
+```
+
+Keep these environments separate. Do not replace `/usr/bin/python3`, do not point Ubuntu's `python3` alternative to Python 3.12, and do not build ROS 2 packages while the `bahnstrom_ems` virtual environment is active.
+
+### Safe workflow for ROS 2 Humble and `yahboom2wd_ws`
+
+Use a fresh terminal or deactivate any active virtual environment:
+
+```bash
+deactivate 2>/dev/null || true
+hash -r
+
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=42
+```
+
+Before a build, source the ROS underlay only. Source `install/setup.bash` after the build succeeds. This avoids keeping deleted package prefixes in `AMENT_PREFIX_PATH`.
+
+Verify the interpreter, ROS distribution, `colcon`, `rclpy`, and `setuptools`:
+
+```bash
+echo "VIRTUAL_ENV=$VIRTUAL_ENV"
+echo "PYTHONHOME=$PYTHONHOME"
+echo "ROS_DISTRO=$ROS_DISTRO"
+
+command -v python3
+python3 --version
+command -v ros2
+command -v colcon
+head -n 1 "$(command -v colcon)"
+
+python3 - <<'PY'
+import sys
+import rclpy
+import setuptools
+
+print("Python executable:", sys.executable)
+print("Python version:", sys.version)
+print("rclpy path:", rclpy.__file__)
+print("setuptools version:", setuptools.__version__)
+print("setuptools path:", setuptools.__file__)
+PY
+```
+
+Expected ROS 2 VM baseline:
+
+```text
+VIRTUAL_ENV=
+PYTHONHOME=
+ROS_DISTRO=humble
+python3=/usr/bin/python3
+Python 3.10.12
+colcon=/usr/bin/colcon
+colcon shebang=#!/usr/bin/python3
+rclpy path under /opt/ros/humble/...
+setuptools path=/usr/lib/python3/dist-packages/setuptools/...
+```
+
+After sourcing a ROS workspace, a nonempty `PYTHONPATH` is normal. Every entry should belong to ROS 2 Humble or a Python 3.10 workspace. A path containing `python3.12`, `bahnstrom_ems/.venv`, or another virtual environment indicates contamination.
+
+Build with the normal ROS 2 workflow:
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+
+rm -rf build/yahboom_2wd_dmpc
+rm -rf install/yahboom_2wd_dmpc
+
+colcon build \
+  --symlink-install \
+  --packages-select yahboom_2wd_dmpc
+
+source install/setup.bash
+```
+
+### `setuptools` compatibility diagnostic for `colcon --symlink-install`
+
+A user-local `setuptools 83.0.0` under:
+
+```text
+~/.local/lib/python3.10/site-packages
+```
+
+caused the error:
+
+```text
+error: option --uninstall not recognized
+```
+
+The diagnostic build is:
+
+```bash
+PYTHONNOUSERSITE=1 colcon build \
+  --symlink-install \
+  --packages-select yahboom_2wd_dmpc
+```
+
+If that build succeeds while the normal build fails, inspect both package locations:
+
+```bash
+python3 - <<'PY'
+import setuptools
+print(setuptools.__version__)
+print(setuptools.__file__)
+PY
+
+PYTHONNOUSERSITE=1 python3 - <<'PY'
+import setuptools
+print(setuptools.__version__)
+print(setuptools.__file__)
+PY
+```
+
+The verified compatible Ubuntu package was:
+
+```text
+setuptools 59.6.0
+/usr/lib/python3/dist-packages/setuptools/
+```
+
+Remove only the incompatible user-local copy when needed:
+
+```bash
+python3 -m pip uninstall -y setuptools
+```
+
+Then verify that normal Python imports the apt-managed copy. Do not set `PYTHONNOUSERSITE=1` globally because the ROS nodes may intentionally use user-local NumPy, CVXPY, ECOS, OSQP, SCS, or PyZMQ packages.
+
+### Safe workflow for `bahnstrom_ems`
+
+Use a separate terminal:
+
+```bash
+cd ~/git_repos/bahnstrom_ems
+source .venv/bin/activate
+
+echo "VIRTUAL_ENV=$VIRTUAL_ENV"
+command -v python
+python --version
+python -m pip --version
+```
+
+Expected:
+
+```text
+VIRTUAL_ENV=.../bahnstrom_ems/.venv
+python=.../bahnstrom_ems/.venv/bin/python
+Python 3.12.11
+pip path under .../bahnstrom_ems/.venv/lib/python3.12/site-packages
+```
+
+When finished:
+
+```bash
+deactivate
+hash -r
+```
+
+Using separate terminals for ROS 2 and `bahnstrom_ems` is the safest daily workflow.
+
 ## Role of `ROS_DOMAIN_ID`
 
 ROS 2 uses DDS for discovery and communication. `ROS_DOMAIN_ID` separates ROS 2 systems on the same network into independent communication domains.
@@ -610,8 +827,10 @@ The Yahboom bridge must already be running in Terminal 1 before starting a feedb
 | 6 | `sinusoidal` | Validate smooth left-right changing curvature | Robot traveled approximately 2 m in a smooth low-amplitude sinusoidal shape, with small fluctuations around the reference, final `dx ≈ 2.03 m`, `dy ≈ -0.02 m`, and automatic stopping | Passed | Single-robot suite for `robot1` complete |
 | 7 | `robot2` calibration and validation | Repeat calibration and the same standard test suite on the second Yahboom 2WD robot | `robot2` has been assembled, calibrated, and has passed the same standard tests | Passed | Keep its own calibration values as a separate baseline |
 | 8 | two-robot distributed MPC dry run | Validate namespaces, networking, time alignment, common world frame, ZeroMQ communication, command publishing, and two-robot MPC behavior | Dry run passed: VM sees both robots, `/dmpc/robot*/pose_world` confirms the measured common-frame initial poses, `/dmpc/robot*/u_world` is published, and `/robot*/cmd_vel` stays zero with `enable_motion:=false` | Passed | Use this as the safety gate before enabling motion |
-| 9 | first two-robot motion-enabled DMPC test | Command both physical Yahboom robots from the VM coordinator using the validated common world frame | Not started | Next | Run a short low-speed test with `enable_motion:=true`, record a bag, and be ready to stop the coordinator |
-| 10 | four-robot distributed MPC setup | Scale the final planner to four robots | Not started | Future | Order and commission `robot3` and `robot4` after the two-robot setup is stable |
+| 9 | first two-robot motion-enabled DMPC test | Command both physical Yahboom robots from the VM coordinator using the validated common world frame | The 60-second test converged near the 0.80 m target formation and remained collision-safe; the earlier bag reported final distance `0.8197 m`, minimum distance `0.7255 m`, and minimum safety margin `0.0755 m` | Passed | Keep as the baseline motion-enabled formation test |
+| 10 | hold-zone-enabled two-robot formation test | Stop translational hunting after convergence and allow heading-only correction | Both robots converged to the safe formation, turned to face each other, and remained stationary in the safe set | Passed | Keep the hold-zone configuration as the hardware baseline |
+| 11 | two-robot obstacle-avoidance test | Validate obstacle clearance while preserving inter-robot safety and final formation hold | Not started | Next | Parameterize one small circular obstacle, validate in simulation, then run a reduced-speed hardware test |
+| 12 | four-robot distributed MPC setup | Scale the final planner to four robots | Not started | Future | Order and commission `robot3` and `robot4` after obstacle avoidance is stable |
 
 The progress table should be updated after every bagged experiment. Keep the terminal command, bag folder name, physical observation, and plotted result together so that calibration decisions are traceable.
 
@@ -1434,59 +1653,115 @@ After fixing `ref_stop_and_go()`, this test passed with smooth straight motion, 
 
 ### Next step
 
-The standard single-robot suite has passed on both `robot1` and `robot2`. The two-robot distributed MPC **dry run has also passed** with the corrected controller/coordinator nodes and the common world-frame initialization.
-
-The verified dry-run setup used:
+The two-robot motion-enabled formation test and the hold-zone-enabled hardware test have both passed. The current baseline can:
 
 ```text
-robot1: x0 = 0.0 m, y0 = -0.7 m, yaw0 = 0.0 rad
-robot2: x0 = 0.0 m, y0 = +0.7 m, yaw0 = 0.0 rad
+- receive both robots' odometry in a common world frame
+- compute and publish bounded distributed MPC commands
+- maintain inter-robot safety
+- converge to the approximately 0.80 m pair formation
+- enter the configured hold zone
+- stop translational motion
+- correct heading so the robots face each other
+- remain stationary in the safe set
 ```
 
-The coordinator published the expected common-frame debug poses:
+The next development stage is obstacle avoidance. Do not move directly to a full-size obstacle on hardware. First parameterize the obstacle geometry and tangential-waypoint parameters, then validate one small circular obstacle in simulation using the 2 m × 3 m field constraints.
+
+## Next stage: obstacle-avoidance validation in the 2 m × 3 m test field
+
+Obstacle avoidance is the correct next feature to validate, but it should not be enabled on the hardware with the current generic obstacle defaults. The current pure-Python defaults were designed for a larger coordinate range. In particular, values such as:
 
 ```text
-/dmpc/robot1/pose_world -> frame_id = map, position = (0.0, -0.7, 0.0)
-/dmpc/robot2/pose_world -> frame_id = map, position = (0.0, +0.7, 0.0)
+tangential_waypoint_radius = 1.30 m
+orbit_tangent_lookahead = 0.90 m
 ```
 
-and `/robot1/cmd_vel` and `/robot2/cmd_vel` stayed zero because `enable_motion:=false`.
+are too large for a field that is only 2 m wide.
 
-The next step is therefore the **first short motion-enabled two-robot DMPC test**. Start conservatively, record a bag, and be ready to stop the coordinator with `Ctrl+C`.
+Before the first obstacle run, expose and configure the complete obstacle geometry and avoidance tuning through the ROS 2 YAML and launch files:
 
-Recommended first motion-enabled test:
-
-```bash
-ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
-  robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
-  robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
-  robot1_initial_x:=0.0 \
-  robot1_initial_y:=-0.7 \
-  robot1_initial_yaw:=0.0 \
-  robot2_initial_x:=0.0 \
-  robot2_initial_y:=0.7 \
-  robot2_initial_yaw:=0.0 \
-  max_linear_speed:=0.04 \
-  max_angular_speed:=0.20 \
-  u_bound:=0.04 \
-  enable_motion:=true
+```text
+obstacle_center_x
+obstacle_center_y
+obstacle_radius
+obstacle_margin
+d_obs_enter
+d_obs_exit
+obstacle_warning_radius
+tangential_waypoint_radius
+orbit_tangent_lookahead
 ```
 
-Use a clear test area, keep the robots well separated, and stop the test after a short first run of about 10-20 seconds. If the motion is smooth and the bag confirms correct `/dmpc/robot*/pose_world`, `/dmpc/robot*/u_world`, and `/robot*/cmd_vel`, then repeat with the default commissioning values.
+The obstacle controller computes clearance from the inflated obstacle boundary:
 
-Only after the two-robot distributed MPC pipeline is stable should the project scale to `robot3` and `robot4`.
+```text
+inflated obstacle radius = physical obstacle radius + obstacle_margin
+clearance = robot-center distance to obstacle center - inflated obstacle radius
+```
 
+Therefore, obstacle radius, margin, warning distance, and tangential-waypoint geometry must be tuned together.
+
+### Recommended staged obstacle test
+
+Use the field coordinate convention:
+
+```text
+x direction: 3 m field length
+y direction: 2 m field width, approximately -1.0 m to +1.0 m
+```
+
+Proceed in this order:
+
+1. Parameterize one circular obstacle in `two_robot_dmpc.yaml`, the controller launch, and the coordinator launch.
+2. Run the same scenario in `yahboom_2wd_dmpc_sim` first.
+3. Verify that the desired final formation is outside the inflated obstacle and outside the obstacle-exit hysteresis region.
+4. Verify minimum obstacle clearance, inter-robot distance, hold-state behavior, and absence of waypoint excursions outside the 2 m × 3 m field.
+5. Run a hardware dry run with `enable_motion:=false`.
+6. Run a 20-30 second hardware test at reduced speed.
+7. Only after that passes, repeat for 60 seconds.
+
+For the first simulation, use a physical obstacle radius of approximately:
+
+```text
+0.15 m to 0.20 m
+```
+
+rather than the allowed maximum of `0.40 m`. A `0.40 m` radius obstacle has a diameter of `0.80 m`; after adding robot-footprint and uncertainty margin, it leaves little lateral room in a 2 m-wide field for two robots and their formation.
+
+A reasonable simulation-only starting point is:
+
+```text
+physical obstacle radius = 0.15 m
+obstacle_margin = 0.10 m
+effective inflated radius = 0.25 m
+
+d_obs_enter = 0.15 m clearance
+d_obs_exit = 0.25 m clearance
+obstacle_warning_radius = 0.35 m clearance
+
+tangential_waypoint_radius = 0.15 m
+orbit_tangent_lookahead = 0.20 m
+
+max_linear_speed = 0.02 m/s
+max_angular_speed = 0.12 rad/s
+u_bound = 0.02
+```
+
+These are initial simulation values, not yet validated hardware parameters. The obstacle location must be selected so that the inflated obstacle, the target formation, and the planned tangent waypoints all remain inside the marked field with additional wall clearance.
+
+The next implementation task is therefore to parameterize obstacle geometry and tangent-waypoint settings, add obstacle-clearance debug topics and plots, and validate the complete scenario in simulation before enabling `obstacles_enabled:=true` on the physical robots.
 
 ## Two-robot distributed MPC development stage
 
-The single-robot commissioning suite has now been completed for `robot1`, and `robot2` has also been assembled, calibrated, and validated with the same standard tests. The next development stage is therefore a **two-robot distributed MPC experiment** with:
+The single-robot commissioning suite has been completed for both robots. The two-robot distributed MPC dry run, motion-enabled safe-formation test, and hold-zone-enabled formation test have also passed:
 
 ```text
 robot1 -> /robot1/odom, /robot1/cmd_vel
 robot2 -> /robot2/odom, /robot2/cmd_vel
 ```
 
-The final research target remains a four-robot distributed MPC setup, but the correct intermediate milestone is a two-robot hardware test. This reduces hardware risk and makes network, timing, odometry-frame, and command-conversion issues easier to isolate before purchasing and commissioning `robot3` and `robot4`.
+The active next milestone is a parameterized one-obstacle scenario in simulation and then on hardware. The final research target remains a four-robot distributed MPC setup, but scaling should wait until obstacle avoidance is repeatable inside the available 2 m × 3 m field.
 
 ### Development strategy
 
@@ -1496,9 +1771,11 @@ Use the following staged plan:
 |---:|---|---|---|
 | 1 | `robot1` only | Calibrate Yahboom ROS 2 interface and pass all standard single-robot path tests | Complete |
 | 2 | `robot2` only | Assemble, calibrate, and validate the second Yahboom 2WD robot with the same test suite | Complete |
-| 3 | `robot1` + `robot2` | Run the distributed MPC stack in a two-robot star topology | Next |
-| 4 | `robot1` + `robot2` + simulated agents | Optionally test mixed hardware/SIL scaling behavior | Optional |
-| 5 | `robot1` ... `robot4` | Order and commission two more robots only after the two-robot hardware stack is stable | Future |
+| 3 | `robot1` + `robot2` | Run the distributed MPC stack in a two-robot star topology | Complete |
+| 4 | `robot1` + `robot2` | Validate formation hold/deadband and heading-only correction | Complete |
+| 5 | `robot1` + `robot2` | Validate one parameterized circular obstacle in simulation and hardware | Next |
+| 6 | `robot1` + `robot2` + simulated agents | Optionally test mixed hardware/SIL scaling behavior | Optional |
+| 7 | `robot1` ... `robot4` | Order and commission two more robots only after the two-robot obstacle-avoidance stack is stable | Future |
 
 ### Two-robot star topology
 
@@ -1627,7 +1904,7 @@ max_angular_speed  = 0.35 rad/s
 obstacles_enabled  = false
 ```
 
-Start with `obstacles_enabled = false` to validate the communication, formation behavior, state feedback, and velocity-command conversion. Enable obstacle avoidance only after the basic two-robot formation run is repeatable and safe.
+The obstacle-free formation, reduced-speed hardware run, and hold-zone-enabled formation test have now passed. Keep this configuration as the baseline. The next stage is a separately parameterized obstacle-avoidance scenario, first in simulation and then on hardware.
 
 
 ### Current DMPC package fixes and deployment notes
@@ -1643,6 +1920,7 @@ The first hardware deployment revealed and fixed the following issues:
 | VM coordinator launch | Two controller endpoints were concatenated into one string | Pass `robot1_controller_endpoint` and `robot2_controller_endpoint` as scalar parameters |
 | VM coordinator node | `self.subscriptions` collided with a read-only `rclpy.node.Node` property | Use `self.odom_subscriptions` |
 | MPC state frame | Both local odometries started at `(0, 0)` | Transform local odometry into a common world/map frame using measured initial poses |
+| Python packaging on Ubuntu VM | `colcon build --symlink-install` failed with `error: option --uninstall not recognized` | Remove the user-local `setuptools 83.0.0` override so `/usr/bin/python3` uses apt-managed `setuptools 59.6.0`; use `PYTHONNOUSERSITE=1` only as a diagnostic |
 
 Commit these fixes to the Git repository and pull the same version on `robot1`, `robot2`, and the Ubuntu VM. Avoid keeping different local package versions on different machines.
 
@@ -1662,4 +1940,4 @@ Commit these fixes to the Git repository and pull the same version on `robot1`, 
 12. Switch to `enable_motion:=true` only in a clear test area and initially reduce `u_bound`, `max_linear_speed`, and `max_angular_speed`.
 13. Record a bag containing both robots' odometry, commands, world poses, and DMPC debug topics.
 
-Do not move to four physical robots until the two-robot stack runs repeatably and safely.
+Do not move to four physical robots until the two-robot formation-hold and obstacle-avoidance scenarios run repeatably and safely.

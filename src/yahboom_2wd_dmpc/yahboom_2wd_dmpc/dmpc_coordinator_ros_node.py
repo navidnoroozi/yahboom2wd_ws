@@ -39,6 +39,18 @@ def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+def bool_from_param(value) -> bool:  # noqa: ANN001
+    """Robust conversion for ROS launch parameters that may arrive as bools or strings."""
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "f", "no", "n", "off", ""}:
+        return False
+    return bool(value)
+
+
 class DmpcCoordinatorRosNode(Node):
     """ROS 2 / ZeroMQ bridge for the two-robot Yahboom DMPC experiment.
 
@@ -92,11 +104,11 @@ class DmpcCoordinatorRosNode(Node):
         # two-robot values, d_form = d_safe + formation_margin = 0.80 m, so
         # d_agent_enter=0.70 and d_agent_exit=0.75 are compatible.
         self.declare_parameter("safety_warning_radius", 1.20)
-        self.declare_parameter("obstacle_warning_radius", 1.20)
+        self.declare_parameter("obstacle_warning_radius", 0.25)
         self.declare_parameter("d_agent_enter", 0.70)
         self.declare_parameter("d_agent_exit", 0.75)
-        self.declare_parameter("d_obs_enter", 0.45)
-        self.declare_parameter("d_obs_exit", 0.85)
+        self.declare_parameter("d_obs_enter", 0.10)
+        self.declare_parameter("d_obs_exit", 0.20)
 
         # Single-integrator explicit-hybrid gains.
         self.declare_parameter("modeC_repulsion_gain_si", 0.90)
@@ -114,6 +126,14 @@ class DmpcCoordinatorRosNode(Node):
 
         self.declare_parameter("safety_enabled", True)
         self.declare_parameter("obstacles_enabled", False)
+        # One circular obstacle in the shared world/map frame.
+        # radius is the physical obstacle radius; obstacle_margin inflates it for safety.
+        self.declare_parameter("obstacle_center_x", 1.0)
+        self.declare_parameter("obstacle_center_y", -0.33)
+        self.declare_parameter("obstacle_radius", 0.15)
+        self.declare_parameter("obstacle_margin", 0.10)
+        self.declare_parameter("tangential_waypoint_radius", 0.12)
+        self.declare_parameter("orbit_tangent_lookahead", 0.20)
         self.declare_parameter("dt", 0.20)
         self.declare_parameter("w_track", 8.0)
         self.declare_parameter("w_du", 3.0)
@@ -157,7 +177,7 @@ class DmpcCoordinatorRosNode(Node):
         else:
             self.controller_endpoints = [str(x) for x in self.get_parameter("controller_endpoints").value]
         self.rate_hz = float(self.get_parameter("rate_hz").value)
-        self.enable_motion = bool(self.get_parameter("enable_motion").value)
+        self.enable_motion = bool_from_param(self.get_parameter("enable_motion").value)
         self.odom_timeout_s = float(self.get_parameter("odom_timeout_s").value)
         self.world_frame = str(self.get_parameter("world_frame").value).strip() or "map"
 
@@ -189,9 +209,9 @@ class DmpcCoordinatorRosNode(Node):
         self.heading_gain = float(self.get_parameter("heading_gain").value)
         self.linear_deadband = float(self.get_parameter("linear_deadband").value)
         self.stop_for_heading_error_rad = float(self.get_parameter("stop_for_heading_error_rad").value)
-        self.allow_reverse = bool(self.get_parameter("allow_reverse").value)
+        self.allow_reverse = bool_from_param(self.get_parameter("allow_reverse").value)
 
-        self.formation_hold_enabled = bool(self.get_parameter("formation_hold_enabled").value)
+        self.formation_hold_enabled = bool_from_param(self.get_parameter("formation_hold_enabled").value)
         self.formation_hold_metric = str(self.get_parameter("formation_hold_metric").value).strip().lower()
         if self.formation_hold_metric not in {"pairwise", "slot", "both"}:
             self.get_logger().warn(
@@ -207,7 +227,7 @@ class DmpcCoordinatorRosNode(Node):
             )
             self.formation_hold_exit_error = self.formation_hold_enter_error
         self.formation_hold_min_steps = max(1, int(self.get_parameter("formation_hold_min_steps").value))
-        self.formation_hold_heading_enabled = bool(self.get_parameter("formation_hold_heading_enabled").value)
+        self.formation_hold_heading_enabled = bool_from_param(self.get_parameter("formation_hold_heading_enabled").value)
         self.formation_hold_heading_gain = float(self.get_parameter("formation_hold_heading_gain").value)
         self.formation_hold_max_angular_speed = float(self.get_parameter("formation_hold_max_angular_speed").value)
         self.formation_hold_heading_tolerance_rad = float(
@@ -222,8 +242,10 @@ class DmpcCoordinatorRosNode(Node):
         self.cmd_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.u_debug_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.pose_debug_publishers: Dict[int, rclpy.publisher.Publisher] = {}
+        self.obstacle_metrics_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.metrics_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/metrics", 10)
         self.thresholds_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/safety_thresholds", 10)
+        self.obstacle_thresholds_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/obstacle_thresholds", 10)
         self.hold_state_publisher = self.create_publisher(Vector3Stamped, "/dmpc/two_robot/hold_state", 10)
         self.odom_subscriptions = []
 
@@ -231,6 +253,7 @@ class DmpcCoordinatorRosNode(Node):
             self.cmd_publishers[agent_id] = self.create_publisher(Twist, f"/{ns}/cmd_vel", 10)
             self.u_debug_publishers[agent_id] = self.create_publisher(Vector3Stamped, f"/dmpc/{ns}/u_world", 10)
             self.pose_debug_publishers[agent_id] = self.create_publisher(PoseStamped, f"/dmpc/{ns}/pose_world", 10)
+            self.obstacle_metrics_publishers[agent_id] = self.create_publisher(Vector3Stamped, f"/dmpc/{ns}/obstacle_metrics", 10)
             self.odom_subscriptions.append(
                 self.create_subscription(
                     Odometry,
@@ -274,6 +297,20 @@ class DmpcCoordinatorRosNode(Node):
             f"d_agent_exit={self.cfg.d_agent_exit:.3f} m, "
             f"safety_warning_radius={self.cfg.safety_warning_radius:.3f} m"
         )
+        if self.cfg.obstacles_enabled:
+            obs = self.cfg.obstacles_circles[0] if self.cfg.obstacles_circles else (float("nan"), float("nan"), float("nan"))
+            self.get_logger().info(
+                f"Obstacle config: enabled=True, center=({obs[0]:.3f}, {obs[1]:.3f}) m, "
+                f"radius={obs[2]:.3f} m, margin={self.cfg.obstacle_margin:.3f} m, "
+                f"inflated_radius={obs[2] + self.cfg.obstacle_margin:.3f} m, "
+                f"d_obs_enter={self.cfg.d_obs_enter:.3f} m, d_obs_exit={self.cfg.d_obs_exit:.3f} m, "
+                f"obstacle_warning_radius={self.cfg.obstacle_warning_radius:.3f} m, "
+                f"tangential_waypoint_radius={self.cfg.tangential_waypoint_radius:.3f} m, "
+                f"orbit_tangent_lookahead={self.cfg.orbit_tangent_lookahead:.3f} m"
+            )
+        else:
+            self.get_logger().info("Obstacle config: enabled=False")
+
         self.get_logger().info(
             f"Formation hold/deadband: enabled={self.formation_hold_enabled}, "
             f"metric={self.formation_hold_metric}, "
@@ -294,7 +331,7 @@ class DmpcCoordinatorRosNode(Node):
             model=str(self.get_parameter("model").value),
             graph=str(self.get_parameter("graph").value),
             objective_mode=str(self.get_parameter("objective_mode").value),
-            auto_M=bool(self.get_parameter("auto_M").value),
+            auto_M=bool_from_param(self.get_parameter("auto_M").value),
             M_manual=int(self.get_parameter("M_manual").value),
             u_min=-u_bound,
             u_max=u_bound,
@@ -321,8 +358,16 @@ class DmpcCoordinatorRosNode(Node):
             pair_filter_margin=float(self.get_parameter("pair_filter_margin").value),
             obs_filter_margin=float(self.get_parameter("obs_filter_margin").value),
             filter_projection_passes=int(self.get_parameter("filter_projection_passes").value),
-            safety_enabled=bool(self.get_parameter("safety_enabled").value),
-            obstacles_enabled=bool(self.get_parameter("obstacles_enabled").value),
+            safety_enabled=bool_from_param(self.get_parameter("safety_enabled").value),
+            obstacles_enabled=bool_from_param(self.get_parameter("obstacles_enabled").value),
+            obstacles_circles=((
+                float(self.get_parameter("obstacle_center_x").value),
+                float(self.get_parameter("obstacle_center_y").value),
+                float(self.get_parameter("obstacle_radius").value),
+            ),),
+            obstacle_margin=float(self.get_parameter("obstacle_margin").value),
+            tangential_waypoint_radius=float(self.get_parameter("tangential_waypoint_radius").value),
+            orbit_tangent_lookahead=float(self.get_parameter("orbit_tangent_lookahead").value),
             dt=float(self.get_parameter("dt").value),
             w_track=float(self.get_parameter("w_track").value),
             w_du=float(self.get_parameter("w_du").value),
@@ -473,6 +518,77 @@ class DmpcCoordinatorRosNode(Node):
         thresholds.vector.z = float(self.cfg.d_agent_exit)
         self.thresholds_publisher.publish(thresholds)
 
+    def _inflated_obstacles(self) -> list[tuple[float, float, float, float]]:
+        """Return configured obstacles as (cx, cy, physical_radius, inflated_radius)."""
+        if not self.cfg.obstacles_enabled:
+            return []
+        out = []
+        for cx, cy, physical_radius in self.cfg.obstacles_circles:
+            physical_radius = float(physical_radius)
+            inflated_radius = physical_radius + float(self.cfg.obstacle_margin)
+            out.append((float(cx), float(cy), physical_radius, inflated_radius))
+        return out
+
+    def _obstacle_metrics_by_agent(self, r_all: np.ndarray) -> dict[int, dict]:
+        """Compute per-robot obstacle distance diagnostics in the shared world frame.
+
+        clearances are relative to the inflated obstacle boundary:
+            clearance = ||robot_center - obstacle_center|| - (obstacle_radius + obstacle_margin)
+        """
+        out: dict[int, dict] = {}
+        obstacles = self._inflated_obstacles()
+        for row, agent_id in enumerate(self.agent_ids):
+            best = {
+                "center_distance": float("inf"),
+                "clearance": float("inf"),
+                "active": 0.0,
+                "obs_idx": -1,
+            }
+            if obstacles:
+                p = r_all[row, :2]
+                for obs_idx, (cx, cy, _physical_radius, inflated_radius) in enumerate(obstacles):
+                    d = float(np.linalg.norm(p - np.array([cx, cy], dtype=float)))
+                    clearance = d - float(inflated_radius)
+                    if clearance < best["clearance"]:
+                        best = {
+                            "center_distance": d,
+                            "clearance": clearance,
+                            "active": 1.0 if clearance <= float(self.cfg.d_obs_enter) else 0.0,
+                            "obs_idx": int(obs_idx),
+                        }
+            out[int(agent_id)] = best
+        return out
+
+    def _publish_obstacle_metrics(self, r_all: np.ndarray) -> dict[int, dict]:
+        """Publish obstacle diagnostics for bags and return the same metrics."""
+        metrics_by_agent = self._obstacle_metrics_by_agent(r_all)
+        stamp = self.get_clock().now().to_msg()
+        for agent_id, metric in metrics_by_agent.items():
+            msg = Vector3Stamped()
+            msg.header.stamp = stamp
+            msg.header.frame_id = self.world_frame
+            msg.vector.x = float(metric["center_distance"])
+            msg.vector.y = float(metric["clearance"])
+            msg.vector.z = float(metric["active"])
+            self.obstacle_metrics_publishers[agent_id].publish(msg)
+
+        thresholds = Vector3Stamped()
+        thresholds.header.stamp = stamp
+        thresholds.header.frame_id = self.world_frame
+        thresholds.vector.x = float(self.cfg.d_obs_enter)
+        thresholds.vector.y = float(self.cfg.d_obs_exit)
+        thresholds.vector.z = float(self.cfg.obstacle_warning_radius)
+        self.obstacle_thresholds_publisher.publish(thresholds)
+        return metrics_by_agent
+
+    def _obstacle_hold_allowed(self, metrics_by_agent: dict[int, dict]) -> bool:
+        """Hold is allowed only when no robot is inside the obstacle exit band."""
+        if not self.cfg.obstacles_enabled:
+            return True
+        if not metrics_by_agent:
+            return False
+        return all(float(m.get("clearance", float("inf"))) >= float(self.cfg.d_obs_exit) for m in metrics_by_agent.values())
+
     def _formation_error_metrics(self, r_all: np.ndarray) -> dict:
         """Compute formation errors used by the hold/deadband layer.
 
@@ -533,12 +649,28 @@ class DmpcCoordinatorRosNode(Node):
         msg.vector.z = float(errors.get("pairwise", 0.0))
         self.hold_state_publisher.publish(msg)
 
-    def _update_formation_hold_state(self, r_all: np.ndarray) -> tuple[bool, dict]:
-        """Update the hold/deadband latch with hysteresis."""
+    def _update_formation_hold_state(self, r_all: np.ndarray, obstacle_hold_allowed: bool = True) -> tuple[bool, dict]:
+        """Update the hold/deadband latch with hysteresis.
+
+        Safety priority: obstacle avoidance and collision avoidance are above the
+        formation hold layer.  Therefore hold is not allowed while any robot is
+        inside the obstacle exit band.
+        """
         errors = self._formation_error_metrics(r_all)
         selected_error = float(errors["selected"])
 
         if not self.formation_hold_enabled:
+            self._formation_hold_active = False
+            self._formation_hold_candidate_steps = 0
+            self._publish_formation_hold_state(False, errors)
+            return False, errors
+
+        if not obstacle_hold_allowed:
+            if self._formation_hold_active:
+                self.get_logger().info(
+                    "Formation hold blocked/released by obstacle clearance; obstacle avoidance has priority.",
+                    throttle_duration_sec=1.0,
+                )
             self._formation_hold_active = False
             self._formation_hold_candidate_steps = 0
             self._publish_formation_hold_state(False, errors)
@@ -620,8 +752,11 @@ class DmpcCoordinatorRosNode(Node):
 
         r_all, v_all, yaw_by_agent = self._state_arrays_from_odom()
         self._publish_two_robot_metrics(r_all)
+        obstacle_metrics = self._publish_obstacle_metrics(r_all)
 
-        hold_active, hold_errors = self._update_formation_hold_state(r_all)
+        hold_active, hold_errors = self._update_formation_hold_state(
+            r_all, obstacle_hold_allowed=self._obstacle_hold_allowed(obstacle_metrics)
+        )
         if hold_active:
             self.get_logger().info(
                 f"Formation hold active: selected_error={hold_errors['selected']:.3f} m, "

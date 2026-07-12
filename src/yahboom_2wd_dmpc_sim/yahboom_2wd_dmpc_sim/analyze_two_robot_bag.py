@@ -51,6 +51,10 @@ def main() -> None:
         "/dmpc/robot1/u_world",
         "/dmpc/robot2/u_world",
         "/dmpc/two_robot/metrics",
+        "/dmpc/two_robot/hold_state",
+        "/dmpc/two_robot/obstacle_thresholds",
+        "/dmpc/robot1/obstacle_metrics",
+        "/dmpc/robot2/obstacle_metrics",
         "/robot1/cmd_vel",
         "/robot2/cmd_vel",
     }
@@ -61,6 +65,9 @@ def main() -> None:
     cmd_nonzero_count = {"robot1": 0, "robot2": 0}
     cmd_count = {"robot1": 0, "robot2": 0}
     metrics_samples = []
+    hold_samples = []
+    obstacle_threshold_samples = []
+    obstacle_samples = {"robot1": [], "robot2": []}
 
     while reader.has_next():
         topic, data, t_nsec = reader.read_next()
@@ -82,6 +89,18 @@ def main() -> None:
         elif topic == "/dmpc/two_robot/metrics":
             dist, target, margin = _vec_xyz(msg)
             metrics_samples.append((t, dist, target, margin))
+        elif topic == "/dmpc/two_robot/hold_state":
+            active, selected_error, pairwise_error = _vec_xyz(msg)
+            hold_samples.append((t, active, selected_error, pairwise_error))
+        elif topic == "/dmpc/two_robot/obstacle_thresholds":
+            enter, exit_, warning = _vec_xyz(msg)
+            obstacle_threshold_samples.append((t, enter, exit_, warning))
+        elif topic == "/dmpc/robot1/obstacle_metrics":
+            center_distance, clearance, active = _vec_xyz(msg)
+            obstacle_samples["robot1"].append((t, center_distance, clearance, active))
+        elif topic == "/dmpc/robot2/obstacle_metrics":
+            center_distance, clearance, active = _vec_xyz(msg)
+            obstacle_samples["robot2"].append((t, center_distance, clearance, active))
         elif topic == "/robot1/cmd_vel":
             cmd_count["robot1"] += 1
             if abs(float(msg.linear.x)) > 1e-6 or abs(float(msg.angular.z)) > 1e-6:
@@ -109,6 +128,15 @@ def main() -> None:
         writer.writerow(["t", "robot1_x", "robot1_y", "robot2_x", "robot2_y", "distance", "distance_minus_d_safe"])
         writer.writerows(samples)
 
+    obstacle_csv_path = prefix.with_name(prefix.name + "_obstacle_metrics").with_suffix(".csv")
+    if obstacle_samples["robot1"] or obstacle_samples["robot2"]:
+        with obstacle_csv_path.open("w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["robot", "t", "center_distance", "inflated_clearance", "active_flag"])
+            for robot in ["robot1", "robot2"]:
+                for row in obstacle_samples[robot]:
+                    writer.writerow([robot, *row])
+
     distances = [row[5] for row in samples]
     final_distance = distances[-1]
     min_distance = min(distances)
@@ -116,6 +144,10 @@ def main() -> None:
     initial_distance = distances[0]
     target_distance = float(args.d_safe) + float(args.formation_margin)
     final_error = abs(final_distance - target_distance)
+    obstacle_clearances = [row[2] for values in obstacle_samples.values() for row in values]
+    min_obstacle_clearance = min(obstacle_clearances) if obstacle_clearances else None
+    active_obstacle_counts = {robot: sum(1 for row in values if abs(row[3]) > 1e-9) for robot, values in obstacle_samples.items()}
+    hold_active_count = sum(1 for row in hold_samples if row[1] > 0.5)
 
     with txt_path.open("w") as f:
         f.write("Two-robot DMPC bag analysis\n")
@@ -134,8 +166,24 @@ def main() -> None:
             f.write(f"{robot} nonzero cmd_vel samples: {cmd_nonzero_count[robot]} / {cmd_count[robot]}\n")
         if metrics_samples:
             f.write(f"/dmpc/two_robot/metrics samples: {len(metrics_samples)}\n")
+        if hold_samples:
+            f.write(f"/dmpc/two_robot/hold_state samples: {len(hold_samples)}\n")
+            f.write(f"hold active samples: {hold_active_count} / {len(hold_samples)}\n")
+        if obstacle_threshold_samples:
+            enter, exit_, warning = obstacle_threshold_samples[-1][1:]
+            f.write("Obstacle thresholds from last sample:\n")
+            f.write(f"  d_obs_enter: {enter:.4f} m\n")
+            f.write(f"  d_obs_exit: {exit_:.4f} m\n")
+            f.write(f"  obstacle_warning_radius: {warning:.4f} m\n")
+        if min_obstacle_clearance is not None:
+            f.write(f"minimum inflated-obstacle clearance: {min_obstacle_clearance:.4f} m\n")
+            for robot in ["robot1", "robot2"]:
+                f.write(f"{robot} obstacle-active samples: {active_obstacle_counts[robot]} / {len(obstacle_samples[robot])}\n")
+            f.write(f"obstacle metrics CSV: {obstacle_csv_path}\n")
 
     print(f"Wrote {csv_path}")
+    if obstacle_samples["robot1"] or obstacle_samples["robot2"]:
+        print(f"Wrote {obstacle_csv_path}")
     print(f"Wrote {txt_path}")
     print(txt_path.read_text())
 

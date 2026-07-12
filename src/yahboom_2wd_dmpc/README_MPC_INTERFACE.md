@@ -201,6 +201,183 @@ AttributeError: _ARRAY_API not found
 ImportError: numpy.core.multiarray failed to import
 ```
 
+## Python environment separation and compatibility checks
+
+The Ubuntu VM intentionally uses two separate Python environments:
+
+```text
+ROS 2 Humble and yahboom2wd_ws:
+  Python executable: /usr/bin/python3
+  Python version:    3.10.12
+  ROS distribution: Humble
+  colcon executable: /usr/bin/colcon
+
+bahnstrom_ems:
+  Python executable: ~/git_repos/bahnstrom_ems/.venv/bin/python
+  Python version:    3.12.11
+  Environment type:  project-local virtual environment
+```
+
+Keep these environments separate. Do not replace `/usr/bin/python3`, do not point Ubuntu's `python3` alternative to Python 3.12, and do not build ROS 2 packages while the `bahnstrom_ems` virtual environment is active.
+
+### Safe workflow for ROS 2 Humble and `yahboom2wd_ws`
+
+Use a fresh terminal or deactivate any active virtual environment:
+
+```bash
+deactivate 2>/dev/null || true
+hash -r
+
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=42
+```
+
+Before a build, source the ROS underlay only. Source `install/setup.bash` after the build succeeds. This avoids keeping deleted package prefixes in `AMENT_PREFIX_PATH`.
+
+Verify the interpreter, ROS distribution, `colcon`, `rclpy`, and `setuptools`:
+
+```bash
+echo "VIRTUAL_ENV=$VIRTUAL_ENV"
+echo "PYTHONHOME=$PYTHONHOME"
+echo "ROS_DISTRO=$ROS_DISTRO"
+
+command -v python3
+python3 --version
+command -v ros2
+command -v colcon
+head -n 1 "$(command -v colcon)"
+
+python3 - <<'PY'
+import sys
+import rclpy
+import setuptools
+
+print("Python executable:", sys.executable)
+print("Python version:", sys.version)
+print("rclpy path:", rclpy.__file__)
+print("setuptools version:", setuptools.__version__)
+print("setuptools path:", setuptools.__file__)
+PY
+```
+
+Expected ROS 2 VM baseline:
+
+```text
+VIRTUAL_ENV=
+PYTHONHOME=
+ROS_DISTRO=humble
+python3=/usr/bin/python3
+Python 3.10.12
+colcon=/usr/bin/colcon
+colcon shebang=#!/usr/bin/python3
+rclpy path under /opt/ros/humble/...
+setuptools path=/usr/lib/python3/dist-packages/setuptools/...
+```
+
+After sourcing a ROS workspace, a nonempty `PYTHONPATH` is normal. Every entry should belong to ROS 2 Humble or a Python 3.10 workspace. A path containing `python3.12`, `bahnstrom_ems/.venv`, or another virtual environment indicates contamination.
+
+Build with the normal ROS 2 workflow:
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+
+rm -rf build/yahboom_2wd_dmpc
+rm -rf install/yahboom_2wd_dmpc
+
+colcon build \
+  --symlink-install \
+  --packages-select yahboom_2wd_dmpc
+
+source install/setup.bash
+```
+
+### `setuptools` compatibility diagnostic for `colcon --symlink-install`
+
+A user-local `setuptools 83.0.0` under:
+
+```text
+~/.local/lib/python3.10/site-packages
+```
+
+caused the error:
+
+```text
+error: option --uninstall not recognized
+```
+
+The diagnostic build is:
+
+```bash
+PYTHONNOUSERSITE=1 colcon build \
+  --symlink-install \
+  --packages-select yahboom_2wd_dmpc
+```
+
+If that build succeeds while the normal build fails, inspect both package locations:
+
+```bash
+python3 - <<'PY'
+import setuptools
+print(setuptools.__version__)
+print(setuptools.__file__)
+PY
+
+PYTHONNOUSERSITE=1 python3 - <<'PY'
+import setuptools
+print(setuptools.__version__)
+print(setuptools.__file__)
+PY
+```
+
+The verified compatible Ubuntu package was:
+
+```text
+setuptools 59.6.0
+/usr/lib/python3/dist-packages/setuptools/
+```
+
+Remove only the incompatible user-local copy when needed:
+
+```bash
+python3 -m pip uninstall -y setuptools
+```
+
+Then verify that normal Python imports the apt-managed copy. Do not set `PYTHONNOUSERSITE=1` globally because the ROS nodes may intentionally use user-local NumPy, CVXPY, ECOS, OSQP, SCS, or PyZMQ packages.
+
+### Safe workflow for `bahnstrom_ems`
+
+Use a separate terminal:
+
+```bash
+cd ~/git_repos/bahnstrom_ems
+source .venv/bin/activate
+
+echo "VIRTUAL_ENV=$VIRTUAL_ENV"
+command -v python
+python --version
+python -m pip --version
+```
+
+Expected:
+
+```text
+VIRTUAL_ENV=.../bahnstrom_ems/.venv
+python=.../bahnstrom_ems/.venv/bin/python
+Python 3.12.11
+pip path under .../bahnstrom_ems/.venv/lib/python3.12/site-packages
+```
+
+When finished:
+
+```bash
+deactivate
+hash -r
+```
+
+Using separate terminals for ROS 2 and `bahnstrom_ems` is the safest daily workflow.
+
 ## Robot-side Yahboom bridge
 
 Start the calibrated Yahboom bridge on each robot first.
@@ -363,7 +540,7 @@ The following conditions have been confirmed:
 /robot1/cmd_vel and /robot2/cmd_vel remain zero when enable_motion=false
 ```
 
-This means the ROS 2 namespaces, ZeroMQ controller communication, common-frame odometry transform, and dry-run safety gate are working. The next step is a short low-speed test with `enable_motion:=true`.
+This means the ROS 2 namespaces, ZeroMQ controller communication, common-frame odometry transform, and dry-run safety gate are working. The subsequent motion-enabled and hold-zone-enabled hardware tests have also passed.
 
 ## First motion-enabled test
 
@@ -393,7 +570,7 @@ ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   enable_motion:=true
 ```
 
-This is intentionally slower than the default commissioning values. If the motion is smooth and the bag looks correct, repeat with the default values.
+This conservative motion-enabled workflow has now been validated on the two physical robots. The hold-zone-enabled follow-up test also passed: both robots converged, faced each other, and remained stationary in the safe set.
 
 ### Formation hold / deadband layer
 
@@ -443,6 +620,46 @@ ros2 bag record -s mcap \
   /tf_static
 ```
 
+## Verified two-robot hold-zone hardware test
+
+The formation-hold/deadband implementation has passed the first physical two-robot validation.
+
+Observed behavior:
+
+```text
+- robot1 and robot2 converged to the configured safe formation
+- the pair distance entered the configured formation hold band
+- the coordinator suppressed translational motion in hold mode
+- the robots corrected their headings until they faced each other
+- both robots then remained stationary inside the safe set
+- the earlier hunting around the final formation was no longer visually apparent
+```
+
+The validated conservative hardware settings were:
+
+```text
+max_linear_speed = 0.03 m/s
+max_angular_speed = 0.15 rad/s
+u_bound = 0.03
+
+d_safe = 0.65 m
+formation_margin = 0.15 m
+d_agent_enter = 0.68 m
+d_agent_exit = 0.72 m
+
+formation_hold_enabled = true
+formation_hold_metric = pairwise
+formation_hold_enter_error = 0.04 m
+formation_hold_exit_error = 0.08 m
+formation_hold_min_steps = 2
+formation_hold_heading_enabled = true
+formation_hold_heading_gain = 1.0
+formation_hold_max_angular_speed = 0.12 rad/s
+formation_hold_heading_tolerance_rad = 0.10 rad
+```
+
+The test validates the practical hardware behavior of the hold layer: formation convergence, hysteretic entry into hold mode, zero translational command inside the hold zone, heading-only correction, and stationary formation keeping. Keep `/dmpc/two_robot/hold_state` in future bags so the activation and release of hold mode remain traceable.
+
 ## Conservative first real-robot parameters
 
 The default launch uses:
@@ -460,9 +677,162 @@ max_angular_speed = 0.35 rad/s
 obstacles_enabled = false
 ```
 
-These values are commissioning parameters, not final research-tuned parameters. Start without obstacles to validate networking, formation behavior, state feedback, command conversion, and bag recording. Enable obstacle avoidance only after the basic two-robot formation run is repeatable.
+These values are commissioning parameters, not final research-tuned parameters. The obstacle-free formation and hold-zone hardware tests are now repeatable and safe. The next stage is a parameterized one-obstacle scenario, beginning in simulation.
+
+## Obstacle-avoidance parameterization update
+
+This package version exposes the circular-obstacle geometry and compact small-field avoidance parameters directly through the ROS 2 launch files. This is required before enabling `obstacles_enabled:=true` on the 2 m x 3 m hardware field, because the original pure-Python defaults used a much larger hard-coded obstacle.
+
+The following parameters are now available in both `robot_dmpc_controller.launch.py` and `two_robot_dmpc_coordinator.launch.py`:
+
+```text
+obstacles_enabled
+obstacle_center_x
+obstacle_center_y
+obstacle_radius
+obstacle_margin
+obstacle_warning_radius
+d_obs_enter
+d_obs_exit
+tangential_waypoint_radius
+orbit_tangent_lookahead
+```
+
+Meaning:
+
+```text
+obstacle_center_x, obstacle_center_y  -> obstacle center in the shared map/world frame [m]
+obstacle_radius                       -> physical radius of the obstacle [m]
+obstacle_margin                       -> safety inflation margin [m]
+inflated radius                       -> obstacle_radius + obstacle_margin
+d_obs_enter, d_obs_exit               -> clearance hysteresis from the inflated obstacle boundary [m]
+obstacle_warning_radius               -> clearance range where obstacle diagnostics/guidance become relevant [m]
+tangential_waypoint_radius            -> compact offset around the inflated obstacle used by the tangent waypoint
+orbit_tangent_lookahead              -> tangential lookahead used by the obstacle detour heuristic
+```
+
+For the first small-field test, use:
+
+```text
+obstacle_center_x: 1.0
+obstacle_center_y: -0.33
+obstacle_radius: 0.15
+obstacle_margin: 0.10
+obstacle_warning_radius: 0.25
+d_obs_enter: 0.10
+d_obs_exit: 0.20
+tangential_waypoint_radius: 0.12
+orbit_tangent_lookahead: 0.20
+```
+
+The coordinator now publishes additional obstacle diagnostics:
+
+```text
+/dmpc/robot1/obstacle_metrics
+/dmpc/robot2/obstacle_metrics
+/dmpc/two_robot/obstacle_thresholds
+```
+
+`/dmpc/robotX/obstacle_metrics` is a `geometry_msgs/msg/Vector3Stamped`:
+
+```text
+vector.x = robot-center to obstacle-center distance [m]
+vector.y = clearance from inflated obstacle boundary [m]
+vector.z = 1.0 if clearance <= d_obs_enter, otherwise 0.0
+```
+
+`/dmpc/two_robot/obstacle_thresholds` is a `geometry_msgs/msg/Vector3Stamped`:
+
+```text
+vector.x = d_obs_enter [m]
+vector.y = d_obs_exit [m]
+vector.z = obstacle_warning_radius [m]
+```
+
+The formation hold layer now respects obstacle priority. Hold mode is allowed only when the formation error is inside the hold band and all robots have obstacle clearance at least `d_obs_exit`. If a robot is too close to the inflated obstacle, obstacle avoidance has priority and hold is released or blocked.
+
+Recommended first obstacle simulation:
+
+```bash
+timeout --signal=SIGINT --kill-after=10s 90s \
+ros2 launch yahboom_2wd_dmpc_sim two_robot_dmpc_sim.launch.py \
+  robot1_initial_x:=1.0 \
+  robot1_initial_y:=-0.7 \
+  robot1_initial_yaw:=0.0 \
+  robot2_initial_x:=1.0 \
+  robot2_initial_y:=0.7 \
+  robot2_initial_yaw:=0.0 \
+  max_linear_speed:=0.02 \
+  max_angular_speed:=0.12 \
+  u_bound:=0.02 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.68 \
+  d_agent_exit:=0.72 \
+  obstacles_enabled:=true \
+  obstacle_center_x:=1.0 \
+  obstacle_center_y:=-0.33 \
+  obstacle_radius:=0.15 \
+  obstacle_margin:=0.10 \
+  d_obs_enter:=0.10 \
+  d_obs_exit:=0.20 \
+  obstacle_warning_radius:=0.25 \
+  tangential_waypoint_radius:=0.12 \
+  orbit_tangent_lookahead:=0.20 \
+  formation_hold_enabled:=true \
+  enable_motion:=true
+```
+
+Record these additional obstacle topics in both simulation and hardware bags:
+
+```text
+/dmpc/robot1/obstacle_metrics
+/dmpc/robot2/obstacle_metrics
+/dmpc/two_robot/obstacle_thresholds
+/dmpc/two_robot/hold_state
+```
+
+The obstacle test passes only if the minimum inflated-obstacle clearance remains positive, the inter-robot distance remains above `d_safe`, the robots converge toward the safe formation, and hold mode becomes active only after obstacle clearance is outside the exit band.
 
 ## Troubleshooting
+
+### Python 3.12 virtual environment versus ROS 2 Python 3.10
+
+The project-local `bahnstrom_ems/.venv` using Python 3.12.11 is safe when it remains activated only in its own terminal. ROS 2 Humble must continue to use `/usr/bin/python3` version 3.10.12.
+
+If `colcon build --symlink-install` reports:
+
+```text
+error: option --uninstall not recognized
+```
+
+check the imported `setuptools`:
+
+```bash
+python3 - <<'PY'
+import sys
+import setuptools
+print(sys.executable)
+print(setuptools.__version__)
+print(setuptools.__file__)
+PY
+```
+
+A user-local `setuptools 83.0.0` under `~/.local/lib/python3.10/site-packages` was incompatible with the Humble symlink-install workflow. Confirm with:
+
+```bash
+PYTHONNOUSERSITE=1 colcon build \
+  --symlink-install \
+  --packages-select yahboom_2wd_dmpc
+```
+
+If that succeeds, remove only the user-local override:
+
+```bash
+python3 -m pip uninstall -y setuptools
+```
+
+The expected apt-managed fallback is `setuptools 59.6.0` under `/usr/lib/python3/dist-packages`.
 
 ### Bash placeholder syntax
 
@@ -699,3 +1069,5 @@ ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
   --d-safe 0.65 \
   --formation-margin 0.15
 ```
+
+For the next obstacle-avoidance stage, extend the simulation launch with the same parameterized obstacle geometry, obstacle clearances, and tangent-waypoint settings that will later be used on the hardware. Do not compare simulation and hardware unless those values are identical.
