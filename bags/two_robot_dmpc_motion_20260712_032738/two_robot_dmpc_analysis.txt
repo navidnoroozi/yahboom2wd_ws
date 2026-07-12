@@ -1,0 +1,25 @@
+Two-robot DMPC bag analysis
+bag: /home/navid/yahboom2wd_ws/bags/two_robot_dmpc_motion_20260712_032738
+samples: 6533
+d_safe: 0.6500 m
+formation_margin: 0.1500 m
+target pair distance for n=2: 0.8000 m
+initial distance: 1.4000 m
+final distance: 0.7623 m
+final absolute formation-distance error: 0.0377 m
+min distance: 0.7091 m
+max distance: 1.4832 m
+minimum safety margin distance-d_safe: 0.0591 m
+robot1 nonzero cmd_vel samples: 589 / 594
+robot2 nonzero cmd_vel samples: 594 / 594
+/dmpc/two_robot/metrics samples: 594
+/dmpc/two_robot/hold_state samples: 594
+hold active samples: 8 / 594
+Obstacle thresholds from last sample:
+  d_obs_enter: 0.1500 m
+  d_obs_exit: 0.2500 m
+  obstacle_warning_radius: 0.3500 m
+minimum inflated-obstacle clearance: 0.1200 m
+robot1 obstacle-active samples: 24 / 594
+robot2 obstacle-active samples: 15 / 594
+obstacle metrics CSV: /home/navid/yahboom2wd_ws/bags/two_robot_dmpc_motion_20260712_032738/two_robot_dmpc_analysis_obstacle_metrics.csv
