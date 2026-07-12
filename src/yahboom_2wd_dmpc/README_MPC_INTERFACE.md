@@ -677,7 +677,7 @@ max_angular_speed = 0.35 rad/s
 obstacles_enabled = false
 ```
 
-These values are commissioning parameters, not final research-tuned parameters. The obstacle-free formation and hold-zone hardware tests are now repeatable and safe. The parameterized one-obstacle scenario has also passed in simulation. The next stage is a hardware obstacle dry run with `enable_motion:=false`, followed by a short 25-second reduced-speed hardware obstacle test.
+These values are commissioning parameters, not final research-tuned parameters. The obstacle-free formation and hold-zone hardware tests are now repeatable and safe. The parameterized one-obstacle scenario has passed in simulation, and the hardware obstacle dry run with `enable_motion:=false` has also passed. The next stage is the short 25-second reduced-speed physical obstacle test.
 
 ## Obstacle-avoidance parameterization update
 
@@ -863,38 +863,217 @@ hold mode is present and does not dominate while obstacle activity is occurring
 
 The final distance is slightly below the nominal `0.80 m` target, but the absolute error is about `3.8 cm`, which is acceptable for the simulation gate. The minimum inter-robot distance remained safely above `d_safe` with about `5.9 cm` margin. The obstacle clearance stayed positive with about `12 cm` minimum clearance from the inflated obstacle boundary.
 
-This simulation result is the evidence required before moving to hardware obstacle testing. The next stage is a hardware dry run with `enable_motion:=false`, followed by a short reduced-speed physical obstacle test.
+This simulation result was the evidence required before moving to hardware obstacle testing. The hardware dry run with `enable_motion:=false` has now also passed. The next stage is a short reduced-speed physical obstacle test.
 
-## Next exact hardware obstacle-validation step
+## Verified hardware obstacle dry run with no physical motion
 
-Do not start with a 60-second physical obstacle run. Use the following sequence.
+The parameterized one-obstacle scenario has now also passed the hardware dry run with `enable_motion:=false`.
 
-### 1. Prepare the field
-
-Use the same coordinate convention as the passed simulation:
+Validated hardware dry-run bag:
 
 ```text
-field length: x = 0.0 m to 3.0 m
-field width:  y = -1.0 m to +1.0 m
+/home/navid/yahboom2wd_ws/bags/two_robot_obstacle_hw_dry_20260712_150404
+```
 
-robot1 start:    x=1.0 m, y=-0.7 m, yaw=0.0 rad
-robot2 start:    x=1.0 m, y=+0.7 m, yaw=0.0 rad
-obstacle center: x=1.0 m, y=-0.33 m
+Validated physical setup:
+
+```text
+robot1 initial pose = (1.0, -0.7, 0.0)
+robot2 initial pose = (1.0, +0.7, 0.0)
+
+obstacle center = (1.0, -0.33) m
+physical obstacle radius = 0.15 m
+obstacle margin = 0.10 m
+inflated obstacle radius = 0.25 m
+```
+
+The VM dry-run topic checks passed:
+
+```text
+/dmpc/robot1/pose_world:
+  frame_id = map
+  position = (1.0, -0.7, 0.0)
+  yaw ≈ 0.0 rad
+
+/dmpc/robot2/pose_world:
+  frame_id = map
+  position = (1.0, +0.7, 0.0)
+  yaw ≈ 0.0 rad
+```
+
+Obstacle metrics were exactly consistent with the floor geometry:
+
+```text
+robot1 obstacle_metrics:
+  center distance = 0.37 m
+  inflated clearance = 0.12 m
+  obstacle active = 1.0
+
+robot2 obstacle_metrics:
+  center distance = 1.03 m
+  inflated clearance = 0.78 m
+  obstacle active = 0.0
+
+obstacle thresholds:
+  d_obs_enter = 0.15 m
+  d_obs_exit = 0.25 m
+  obstacle_warning_radius = 0.35 m
+```
+
+Because `robot1` starts with `0.12 m` clearance and `d_obs_enter = 0.15 m`, it is expected that `robot1` is obstacle-active already at the start of the dry run.
+
+Both physical command topics stayed zero:
+
+```text
+/robot1/cmd_vel: linear.x = 0.0, angular.z = 0.0
+/robot2/cmd_vel: linear.x = 0.0, angular.z = 0.0
+```
+
+Both odometry streams were visible on the VM at approximately `30 Hz`, and both ZeroMQ controller ports were reachable:
+
+```text
+robot1 odom ≈ 30 Hz
+robot2 odom ≈ 30 Hz
+
+192.168.178.87:5601 succeeded
+192.168.178.94:5602 succeeded
+```
+
+Dry-run bag analysis:
+
+```text
+initial distance:                         1.4000 m
+final distance:                           1.4000 m
+min distance:                             1.4000 m
+max distance:                             1.4000 m
+minimum safety margin distance-d_safe:    0.7500 m
+
+robot1 nonzero cmd_vel samples:           0 / 77
+robot2 nonzero cmd_vel samples:           0 / 77
+
+hold active samples:                      0 / 77
+
+minimum inflated-obstacle clearance:      0.1200 m
+robot1 obstacle-active samples:           77 / 77
+robot2 obstacle-active samples:           0 / 77
+```
+
+This hardware dry run is considered passed because the common world-frame initialization, obstacle geometry, obstacle thresholds, ROS 2 topic visibility, ZeroMQ connectivity, obstacle diagnostics, and zero-motion safety gate all behaved as expected.
+
+The formation error remains large in this dry run because the robots are intentionally not allowed to move. That is not a failure for `enable_motion:=false`.
+
+## Complete hardware obstacle dry-run workflow
+
+Use this dry-run workflow whenever the physical obstacle setup or initial robot placement is changed. It verifies that the geometry and diagnostics are correct before the motors are allowed to move.
+
+### 1. Prepare the 2 m × 3 m field
+
+Mark the field with tape:
+
+```text
+x direction: 3 m field length
+y direction: 2 m field width, approximately -1.0 m to +1.0 m
+
+robot1 start:    x=1.00 m, y=-0.70 m, yaw=0.0 rad
+robot2 start:    x=1.00 m, y=+0.70 m, yaw=0.0 rad
+obstacle center: x=1.00 m, y=-0.33 m
 obstacle radius: 0.15 m
 ```
 
-Use a soft, lightweight obstacle first. The physical radius should be approximately `0.15 m`; do not use the maximum `0.40 m` obstacle yet.
+Use a soft, lightweight obstacle for the first physical tests. Do not use the maximum `0.40 m` radius obstacle yet.
 
-### 2. Start the Yahboom bridge on both robots
-
-Use the already calibrated bridge commands for `robot1` and `robot2`. Keep the same `ROS_DOMAIN_ID=42` on every terminal.
-
-### 3. Start the robot-side DMPC controllers with the same obstacle parameters
-
-On `robot1`:
+### 2. Ubuntu VM: clean environment and stop old nodes
 
 ```bash
 cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+pkill -f two_robot_dmpc_sim || true
+pkill -f two_robot_sim_node || true
+pkill -f dmpc_coordinator_ros_node || true
+```
+
+Verify that the patched obstacle parameters are exposed:
+
+```bash
+ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py --show-args | grep -E \
+"obstacle_center|obstacle_radius|obstacle_margin|d_obs|tangential|orbit|formation_hold"
+```
+
+Expected launch arguments include:
+
+```text
+obstacle_center_x
+obstacle_center_y
+obstacle_radius
+obstacle_margin
+d_obs_enter
+d_obs_exit
+tangential_waypoint_radius
+orbit_tangent_lookahead
+formation_hold_enabled
+```
+
+### 3. robot1 Raspberry Pi: start the Yahboom bridge
+
+```bash
+cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot1 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
+```
+
+Keep this terminal running.
+
+### 4. robot2 Raspberry Pi: start the Yahboom bridge
+
+```bash
+cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot2 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
+```
+
+Use robot2-specific calibration values if they are different. Keep this terminal running.
+
+### 5. robot1 Raspberry Pi: start the DMPC controller
+
+```bash
+cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=42
@@ -918,15 +1097,54 @@ ros2 launch yahboom_2wd_dmpc robot_dmpc_controller.launch.py \
   orbit_tangent_lookahead:=0.20
 ```
 
-On `robot2`, use the same command with:
+Expected output:
 
 ```text
-agent_id:=2
+[YahboomDMPCController 1] REP bound at tcp://*:5601
 ```
 
-### 4. Run a hardware dry run from the Ubuntu VM
+Keep this terminal running.
 
-This verifies world poses, obstacle metrics, ZeroMQ communication, and zero physical command before any robot moves.
+### 6. robot2 Raspberry Pi: start the DMPC controller
+
+```bash
+cd ~/yahboom2wd_ws
+
+deactivate 2>/dev/null || true
+hash -r
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_dmpc robot_dmpc_controller.launch.py \
+  agent_id:=2 \
+  u_bound:=0.02 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.68 \
+  d_agent_exit:=0.72 \
+  obstacles_enabled:=true \
+  obstacle_center_x:=1.0 \
+  obstacle_center_y:=-0.33 \
+  obstacle_radius:=0.15 \
+  obstacle_margin:=0.10 \
+  d_obs_enter:=0.15 \
+  d_obs_exit:=0.25 \
+  obstacle_warning_radius:=0.35 \
+  tangential_waypoint_radius:=0.12 \
+  orbit_tangent_lookahead:=0.20
+```
+
+Expected output:
+
+```text
+[YahboomDMPCController 2] REP bound at tcp://*:5602
+```
+
+Keep this terminal running.
+
+### 7. Ubuntu VM: verify odometry and ZeroMQ connectivity
 
 ```bash
 cd ~/yahboom2wd_ws
@@ -934,7 +1152,79 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=42
 
-timeout --signal=SIGINT --kill-after=10s 15s \
+ros2 topic hz /robot1/odom
+```
+
+Stop with `Ctrl+C` after a few lines. Then run:
+
+```bash
+ros2 topic hz /robot2/odom
+```
+
+Expected: both are approximately `30 Hz`.
+
+Check the controller ports:
+
+```bash
+nc -vz 192.168.178.87 5601
+nc -vz 192.168.178.94 5602
+```
+
+Expected:
+
+```text
+Connection to 192.168.178.87 5601 port [tcp/*] succeeded
+Connection to 192.168.178.94 5602 port [tcp/*] succeeded
+```
+
+### 8. Ubuntu VM: start dry-run bag recording
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+mkdir -p ~/yahboom2wd_ws/bags
+
+ros2 bag record -s sqlite3 \
+  -o ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_dry_$(date +%Y%m%d_%H%M%S) \
+  /robot1/odom \
+  /robot2/odom \
+  /robot1/cmd_vel \
+  /robot2/cmd_vel \
+  /dmpc/robot1/pose_world \
+  /dmpc/robot2/pose_world \
+  /dmpc/robot1/u_world \
+  /dmpc/robot2/u_world \
+  /dmpc/two_robot/metrics \
+  /dmpc/two_robot/safety_thresholds \
+  /dmpc/two_robot/hold_state \
+  /dmpc/robot1/obstacle_metrics \
+  /dmpc/robot2/obstacle_metrics \
+  /dmpc/two_robot/obstacle_thresholds \
+  /robot1/diagnostics \
+  /robot2/diagnostics \
+  /robot1/imu/data \
+  /robot2/imu/data \
+  /robot1/encoder_ticks \
+  /robot2/encoder_ticks \
+  /rosout \
+  /tf \
+  /tf_static
+```
+
+Keep the bag terminal running.
+
+### 9. Ubuntu VM: run the dry-run coordinator with `enable_motion:=false`
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+timeout --signal=SIGINT --kill-after=10s 20s \
 ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
   robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
@@ -962,39 +1252,161 @@ ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   tangential_waypoint_radius:=0.12 \
   orbit_tangent_lookahead:=0.20 \
   formation_hold_enabled:=true \
+  formation_hold_metric:=pairwise \
+  formation_hold_enter_error:=0.04 \
+  formation_hold_exit_error:=0.08 \
+  formation_hold_min_steps:=2 \
+  formation_hold_heading_enabled:=true \
+  formation_hold_heading_gain:=1.0 \
+  formation_hold_max_angular_speed:=0.12 \
+  formation_hold_heading_tolerance_rad:=0.10 \
   enable_motion:=false
 ```
 
-In another VM terminal, check:
+### 10. Ubuntu VM: check dry-run topics
+
+Run these checks while the dry-run coordinator is running:
 
 ```bash
-ros2 topic echo /dmpc/robot1/pose_world
-ros2 topic echo /dmpc/robot2/pose_world
-ros2 topic echo /dmpc/robot1/obstacle_metrics
-ros2 topic echo /dmpc/robot2/obstacle_metrics
-ros2 topic echo /robot1/cmd_vel
-ros2 topic echo /robot2/cmd_vel
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 topic echo --once /dmpc/robot1/pose_world
+ros2 topic echo --once /dmpc/robot2/pose_world
 ```
 
-Pass criteria for the dry run:
+Expected:
+
+```text
+robot1: x ≈ 1.0, y ≈ -0.7, yaw ≈ 0.0
+robot2: x ≈ 1.0, y ≈ +0.7, yaw ≈ 0.0
+```
+
+Check obstacle metrics:
+
+```bash
+ros2 topic echo --once /dmpc/robot1/obstacle_metrics
+ros2 topic echo --once /dmpc/robot2/obstacle_metrics
+ros2 topic echo --once /dmpc/two_robot/obstacle_thresholds
+```
+
+Expected:
+
+```text
+robot1 center distance to obstacle ≈ 0.37 m
+robot1 inflated clearance ≈ 0.12 m
+robot1 obstacle-active flag = 1.0
+
+robot2 center distance to obstacle ≈ 1.03 m
+robot2 inflated clearance ≈ 0.78 m
+robot2 obstacle-active flag = 0.0
+
+d_obs_enter = 0.15
+d_obs_exit  = 0.25
+obstacle_warning_radius = 0.35
+```
+
+Check zero physical commands:
+
+```bash
+ros2 topic echo --once /robot1/cmd_vel
+ros2 topic echo --once /robot2/cmd_vel
+```
+
+Expected:
+
+```text
+linear.x = 0.0
+angular.z = 0.0
+```
+
+After the dry-run coordinator exits, stop the bag recorder with `Ctrl+C`.
+
+### 11. Ubuntu VM: analyze the dry-run bag
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+LATEST_DRY_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_dry_* | head -1)
+
+ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
+  --bag "$LATEST_DRY_BAG" \
+  --storage sqlite3 \
+  --d-safe 0.65 \
+  --formation-margin 0.15
+
+cat "$LATEST_DRY_BAG/two_robot_dmpc_analysis.txt"
+```
+
+Dry-run pass criteria:
 
 ```text
 robot1 pose_world is close to (1.0, -0.7)
 robot2 pose_world is close to (1.0, +0.7)
 robot1 inflated-obstacle clearance is close to 0.12 m
 robot2 inflated-obstacle clearance is close to 0.78 m
-both cmd_vel topics remain zero
+robot1 is obstacle-active at the start
+robot2 is not obstacle-active at the start
+robot1 cmd_vel has zero nonzero samples
+robot2 cmd_vel has zero nonzero samples
 ```
 
-### 5. Record a hardware obstacle bag
+## Next exact test: 25-second physical obstacle run
 
-Start the bag before the motion-enabled coordinator:
+The dry run has passed. The next test is a short **25-second physical obstacle-avoidance run** with `enable_motion:=true`. Use exactly the same geometry and thresholds as the passed simulation and dry run.
+
+### 1. Keep the current terminals running
+
+Keep these four robot-side terminals running:
+
+```text
+robot1 Yahboom bridge
+robot2 Yahboom bridge
+robot1 DMPC controller
+robot2 DMPC controller
+```
+
+Keep the robots and obstacle at the same measured positions:
+
+```text
+robot1:   x=1.00 m, y=-0.70 m, yaw=0.0
+robot2:   x=1.00 m, y=+0.70 m, yaw=0.0
+obstacle: x=1.00 m, y=-0.33 m, radius=0.15 m
+```
+
+### 2. Ubuntu VM: prepare an emergency stop terminal
+
+Keep this ready in a separate VM terminal. Run it immediately if anything looks unsafe:
 
 ```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 topic pub --once /robot1/cmd_vel geometry_msgs/msg/Twist \
+"{linear: {x: 0.0}, angular: {z: 0.0}}"
+
+ros2 topic pub --once /robot2/cmd_vel geometry_msgs/msg/Twist \
+"{linear: {x: 0.0}, angular: {z: 0.0}}"
+```
+
+### 3. Ubuntu VM: start the 25-second hardware bag
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
 mkdir -p ~/yahboom2wd_ws/bags
 
 ros2 bag record -s sqlite3 \
-  -o ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_$(date +%Y%m%d_%H%M%S) \
+  -o ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_25s_$(date +%Y%m%d_%H%M%S) \
   /robot1/odom \
   /robot2/odom \
   /robot1/cmd_vel \
@@ -1003,22 +1415,33 @@ ros2 bag record -s sqlite3 \
   /dmpc/robot2/pose_world \
   /dmpc/robot1/u_world \
   /dmpc/robot2/u_world \
-  /dmpc/robot1/obstacle_metrics \
-  /dmpc/robot2/obstacle_metrics \
   /dmpc/two_robot/metrics \
   /dmpc/two_robot/safety_thresholds \
-  /dmpc/two_robot/obstacle_thresholds \
   /dmpc/two_robot/hold_state \
+  /dmpc/robot1/obstacle_metrics \
+  /dmpc/robot2/obstacle_metrics \
+  /dmpc/two_robot/obstacle_thresholds \
   /robot1/diagnostics \
   /robot2/diagnostics \
+  /robot1/imu/data \
+  /robot2/imu/data \
+  /robot1/encoder_ticks \
+  /robot2/encoder_ticks \
   /rosout \
   /tf \
   /tf_static
 ```
 
-### 6. Run the first physical obstacle test for 25 seconds
+Keep the bag recorder running.
+
+### 4. Ubuntu VM: run the 25-second motion-enabled coordinator
 
 ```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
 timeout --signal=SIGINT --kill-after=10s 25s \
 ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
@@ -1047,37 +1470,55 @@ ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
   tangential_waypoint_radius:=0.12 \
   orbit_tangent_lookahead:=0.20 \
   formation_hold_enabled:=true \
+  formation_hold_metric:=pairwise \
+  formation_hold_enter_error:=0.04 \
+  formation_hold_exit_error:=0.08 \
+  formation_hold_min_steps:=2 \
+  formation_hold_heading_enabled:=true \
+  formation_hold_heading_gain:=1.0 \
+  formation_hold_max_angular_speed:=0.12 \
+  formation_hold_heading_tolerance_rad:=0.10 \
   enable_motion:=true
 ```
 
-This first hardware run only needs to validate safe avoidance behavior. It does not need to fully settle into hold.
+Watch the robots continuously. The purpose of this first physical run is not perfect final convergence; it is to verify that the obstacle-active behavior starts safely and that both robots remain collision-free and inside the marked field.
 
-Pass criteria for the 25-second run:
+After the coordinator exits, stop the bag recorder with `Ctrl+C`.
+
+### 5. Ubuntu VM: analyze the 25-second hardware bag
+
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+LATEST_HW_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_25s_* | head -1)
+
+ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
+  --bag "$LATEST_HW_BAG" \
+  --storage sqlite3 \
+  --d-safe 0.65 \
+  --formation-margin 0.15
+
+cat "$LATEST_HW_BAG/two_robot_dmpc_analysis.txt"
+```
+
+The 25-second hardware obstacle test passes only if:
 
 ```text
 minimum inflated-obstacle clearance > 0.0 m
 minimum inter-robot distance > 0.65 m
 at least one robot has obstacle-active samples > 0
-both robots stay inside the 2 m x 3 m field
-no abrupt full-speed turn or repeated stop/start chattering appears
+both robots stay inside the 2 m x 3 m marked field
+commands remain slow and smooth
 both robots stop when the coordinator exits
 ```
 
-### 7. Analyze before extending the duration
+### 6. Ubuntu VM: plot and animate the 25-second hardware run
 
 ```bash
-LATEST_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_* | head -1)
-
-ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
-  --bag "$LATEST_BAG" \
-  --storage sqlite3 \
-  --d-safe 0.65 \
-  --formation-margin 0.15
-
-cat "$LATEST_BAG/two_robot_dmpc_analysis.txt"
-
 python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_bag.py \
-  --bag "$LATEST_BAG" \
+  --bag "$LATEST_HW_BAG" \
   --namespaces robot1 robot2 \
   --storage-id auto \
   --d-safe 0.65 \
@@ -1093,7 +1534,42 @@ python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_bag.py \
   --obstacle-margin 0.10
 ```
 
-Only after the 25-second hardware run passes should the same setup be repeated for `60s`.
+Check at least these plots:
+
+```text
+$LATEST_HW_BAG/team_plots/team_world_trajectories.png
+$LATEST_HW_BAG/team_plots/team_obstacle_clearance.png
+$LATEST_HW_BAG/team_plots/team_obstacle_active.png
+$LATEST_HW_BAG/team_plots/team_inter_robot_distance.png
+$LATEST_HW_BAG/team_plots/team_safety_margin.png
+```
+
+Create the animation:
+
+```bash
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
+  --bag "$LATEST_HW_BAG" \
+  --namespaces robot1 robot2 \
+  --storage-id auto \
+  --d-safe 0.65 \
+  --formation-margin 0.15 \
+  --fps 8 \
+  --step 1 \
+  --max-frames 600 \
+  --show-obstacle always \
+  --obstacle-center-x 1.0 \
+  --obstacle-center-y -0.33 \
+  --obstacle-radius 0.15 \
+  --obstacle-margin 0.10
+```
+
+Open the interactive animation:
+
+```bash
+xdg-open "$LATEST_HW_BAG/team_animation/team_motion_interactive.html"
+```
+
+Only after the 25-second run passes should the same configuration be repeated for `60s`.
 
 ## Troubleshooting
 
