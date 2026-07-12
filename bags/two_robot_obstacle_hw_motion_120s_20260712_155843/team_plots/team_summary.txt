@@ -1,0 +1,61 @@
+Yahboom two-robot DMPC team summary
+====================================
+
+bag_path: /home/navid/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_120s_20260712_155843
+storage_id: sqlite3
+namespaces: robot1, robot2
+analysis_csv: /home/navid/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_120s_20260712_155843/two_robot_dmpc_analysis.csv
+
+Configuration:
+  d_safe: 0.6500 m
+  d_agent_enter: 0.6800 m
+  d_agent_exit: 0.7200 m
+  target pair distance: 0.8000 m
+
+Team metrics:
+  samples: 230
+  initial distance: 1.4000 m
+  final distance: 0.9440 m
+  min distance: 0.8282 m
+  max distance: 1.6193 m
+  minimum safety margin distance-d_safe: 0.1782 m
+  final absolute formation-distance error: 0.1440 m
+
+Message counts used:
+  /dmpc/robot1/obstacle_metrics: 230
+  /dmpc/robot1/pose_world: 230
+  /dmpc/robot1/u_world: 229
+  /dmpc/robot2/obstacle_metrics: 230
+  /dmpc/robot2/pose_world: 230
+  /dmpc/robot2/u_world: 229
+  /dmpc/two_robot/hold_state: 230
+  /dmpc/two_robot/metrics: 230
+  /dmpc/two_robot/obstacle_thresholds: 230
+  /dmpc/two_robot/safety_thresholds: 230
+  /robot1/cmd_vel: 229
+  /robot1/odom: 4425
+  /robot2/cmd_vel: 229
+  /robot2/odom: 4425
+
+Hold-zone metrics:
+  hold_state samples: 230
+  hold active samples: 0 / 230
+  final hold active: False
+  final selected hold error: 0.1440 m
+  final pairwise hold error: 0.1440 m
+
+Obstacle configuration used for plots:
+  obstacle_center_x: 1.0000
+  obstacle_center_y: -0.3300
+  obstacle_radius: 0.1500
+  obstacle_margin: 0.1000
+  inflated_radius: 0.2500
+
+Obstacle thresholds from last bag sample:
+  d_obs_enter: 0.1500 m
+  d_obs_exit: 0.2500 m
+  obstacle_warning_radius: 0.3500 m
+
+Obstacle metrics:
+  robot1: samples=230, min_clearance=0.1007 m, final_clearance=0.3737 m, active_samples=18 / 230
+  robot2: samples=230, min_clearance=0.1631 m, final_clearance=0.1631 m, active_samples=0 / 230
