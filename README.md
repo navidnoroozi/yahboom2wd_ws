@@ -2945,3 +2945,234 @@ Commit these fixes to the Git repository and pull the same version on `robot1`, 
 13. Record a bag containing both robots' odometry, commands, world poses, and DMPC debug topics.
 
 Do not move to four physical robots until the two-robot formation-hold and physical obstacle-avoidance scenarios run repeatably and safely.
+
+# HOW TO RUN WITH OBSTACLE AVOIDANCE + COLLISION AVOIDANCE ENABELED
+Step-by-step commands for the run
+1. Start `robot1` Yahboom bridge
+```bash
+cd ~/yahboom2wd_ws
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot1 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
+```
+
+2. Start `robot2` Yahboom bridge
+```bash
+cd ~/yahboom2wd_ws
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_bringup yahboom_2wd.launch.py \
+  namespace:=robot2 \
+  serial_port:=/dev/myserial \
+  command_mode:=motion \
+  linear_cmd_scale:=1.7 \
+  angular_cmd_scale:=1.0 \
+  odom_linear_scale:=1.5
+```
+
+3. Start robot1 DMPC controller with `d_obs_exit:=0.20`
+```bash
+cd ~/yahboom2wd_ws
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_dmpc robot_dmpc_controller.launch.py \
+  agent_id:=1 \
+  u_bound:=0.02 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.68 \
+  d_agent_exit:=0.72 \
+  obstacles_enabled:=true \
+  obstacle_center_x:=1.0 \
+  obstacle_center_y:=-0.33 \
+  obstacle_radius:=0.15 \
+  obstacle_margin:=0.10 \
+  d_obs_enter:=0.15 \
+  d_obs_exit:=0.20 \
+  obstacle_warning_radius:=0.35 \
+  tangential_waypoint_radius:=0.12 \
+  orbit_tangent_lookahead:=0.20
+```
+
+4. Start robot2 DMPC controller with `d_obs_exit:=0.20`
+```bash
+cd ~/yahboom2wd_ws
+
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+ros2 launch yahboom_2wd_dmpc robot_dmpc_controller.launch.py \
+  agent_id:=2 \
+  u_bound:=0.02 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.68 \
+  d_agent_exit:=0.72 \
+  obstacles_enabled:=true \
+  obstacle_center_x:=1.0 \
+  obstacle_center_y:=-0.33 \
+  obstacle_radius:=0.15 \
+  obstacle_margin:=0.10 \
+  d_obs_enter:=0.15 \
+  d_obs_exit:=0.20 \
+  obstacle_warning_radius:=0.35 \
+  tangential_waypoint_radius:=0.12 \
+  orbit_tangent_lookahead:=0.20
+```
+
+5. VM: Start bag recording for the 120-second tuning run
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+mkdir -p ~/yahboom2wd_ws/bags
+
+ros2 bag record -s sqlite3 \
+  -o ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_120s_exit020_$(date +%Y%m%d_%H%M%S) \
+  /robot1/odom \
+  /robot2/odom \
+  /robot1/cmd_vel \
+  /robot2/cmd_vel \
+  /dmpc/robot1/pose_world \
+  /dmpc/robot2/pose_world \
+  /dmpc/robot1/u_world \
+  /dmpc/robot2/u_world \
+  /dmpc/two_robot/metrics \
+  /dmpc/two_robot/safety_thresholds \
+  /dmpc/two_robot/hold_state \
+  /dmpc/robot1/obstacle_metrics \
+  /dmpc/robot2/obstacle_metrics \
+  /dmpc/two_robot/obstacle_thresholds \
+  /robot1/diagnostics \
+  /robot2/diagnostics \
+  /robot1/imu/data \
+  /robot2/imu/data \
+  /robot1/encoder_ticks \
+  /robot2/encoder_ticks \
+  /rosout \
+  /tf \
+  /tf_static
+```
+
+6. VM: run the coordinator node for 120-second
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+
+timeout --signal=SIGINT --kill-after=10s 120s \
+ros2 launch yahboom_2wd_dmpc two_robot_dmpc_coordinator.launch.py \
+  robot1_controller_endpoint:=tcp://192.168.178.87:5601 \
+  robot2_controller_endpoint:=tcp://192.168.178.94:5602 \
+  robot1_initial_x:=1.0 \
+  robot1_initial_y:=-0.7 \
+  robot1_initial_yaw:=0.0 \
+  robot2_initial_x:=1.0 \
+  robot2_initial_y:=0.7 \
+  robot2_initial_yaw:=0.0 \
+  max_linear_speed:=0.02 \
+  max_angular_speed:=0.12 \
+  u_bound:=0.02 \
+  d_safe:=0.65 \
+  formation_margin:=0.15 \
+  d_agent_enter:=0.68 \
+  d_agent_exit:=0.72 \
+  obstacles_enabled:=true \
+  obstacle_center_x:=1.0 \
+  obstacle_center_y:=-0.33 \
+  obstacle_radius:=0.15 \
+  obstacle_margin:=0.10 \
+  d_obs_enter:=0.15 \
+  d_obs_exit:=0.20 \
+  obstacle_warning_radius:=0.35 \
+  tangential_waypoint_radius:=0.12 \
+  orbit_tangent_lookahead:=0.20 \
+  formation_hold_enabled:=true \
+  formation_hold_metric:=pairwise \
+  formation_hold_enter_error:=0.04 \
+  formation_hold_exit_error:=0.08 \
+  formation_hold_min_steps:=2 \
+  formation_hold_heading_enabled:=true \
+  formation_hold_heading_gain:=1.0 \
+  formation_hold_max_angular_speed:=0.12 \
+  formation_hold_heading_tolerance_rad:=0.10 \
+  enable_motion:=true
+```
+
+7. VM: stop bag recording with `CTRL+C` and analyze the new bag
+```bash
+cd ~/yahboom2wd_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+LATEST_HW_BAG=$(ls -td ~/yahboom2wd_ws/bags/two_robot_obstacle_hw_motion_120s_* | head -1)
+
+ros2 run yahboom_2wd_dmpc_sim analyze_two_robot_bag \
+  --bag "$LATEST_HW_BAG" \
+  --storage sqlite3 \
+  --d-safe 0.65 \
+  --formation-margin 0.15
+
+cat "$LATEST_HW_BAG/two_robot_dmpc_analysis.txt"
+```
+
+8. VM: plot the new bag
+```bash
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_bag.py \
+  --bag "$LATEST_HW_BAG" \
+  --namespaces robot1 robot2 \
+  --storage-id auto \
+  --d-safe 0.65 \
+  --formation-margin 0.15 \
+  --d-agent-enter 0.68 \
+  --d-agent-exit 0.72 \
+  --formation-hold-enter-error 0.04 \
+  --formation-hold-exit-error 0.08 \
+  --show-obstacle always \
+  --obstacle-center-x 1.0 \
+  --obstacle-center-y -0.33 \
+  --obstacle-radius 0.15 \
+  --obstacle-margin 0.10
+```
+
+9. Create the animation
+```bash
+python3 ~/yahboom2wd_ws/tools/plot_yahboom_team_animation.py \
+  --bag "$LATEST_HW_BAG" \
+  --namespaces robot1 robot2 \
+  --storage-id auto \
+  --d-safe 0.65 \
+  --formation-margin 0.15 \
+  --fps 8 \
+  --step 1 \
+  --max-frames 600 \
+  --show-obstacle always \
+  --obstacle-center-x 1.0 \
+  --obstacle-center-y -0.33 \
+  --obstacle-radius 0.15 \
+  --obstacle-margin 0.10
+```
+
+10. Open the interactive version of the animation for control over the animation speed:
+```bash
+xdg-open "$LATEST_HW_BAG/team_animation/team_motion_interactive.html"
+```
